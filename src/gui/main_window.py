@@ -3,9 +3,9 @@ from typing import List
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (QAction, QMainWindow, QSplitter, QStatusBar,
-                              QTabWidget, QToolBar, QWidget, QVBoxLayout,
-                              QCheckBox, QLabel)
+from PyQt5.QtWidgets import (QAction, QMainWindow, QPushButton, QSplitter,
+                              QStatusBar, QTabWidget, QToolBar, QWidget,
+                              QVBoxLayout, QCheckBox, QLabel)
 
 from config import APP_TITLE, MARKERS_FILE
 from drone.controller import CloverController, Telemetry
@@ -14,11 +14,13 @@ from vision.camera_thread import CameraThread
 from vision.aruco_detector import DetectedMarker
 from utils.cuda import cuda_available, cuda_info
 
+from drone.controller import RosState
 from gui.control_panel import ControlPanel
 from gui.camera_widget import CameraWidget
 from gui.map_widget import MapWidget
 from gui.status_widget import StatusWidget
 from gui.marker_dialog import MarkerManagerWidget
+from gui.connection_dialog import ConnectionDialog
 
 
 class MainWindow(QMainWindow):
@@ -76,15 +78,24 @@ class MainWindow(QMainWindow):
 
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
-        sim = "" if self._controller.ros_available else " [СИМУЛЯЦИЯ]"
-        gpu = "  |  GPU: " + ("CUDA" if cuda_available() else "нет")
-        self._status_bar.showMessage(f"Clover 4 GUI готов{sim}{gpu}")
+        gpu = "GPU: CUDA" if cuda_available() else "GPU: нет"
+        self._status_bar.showMessage(f"Clover 4 GUI готов  |  {gpu}")
 
     def _build_toolbar(self) -> QToolBar:
         tb = QToolBar("Основная")
         tb.setMovable(False)
 
-        self._act_add_marker = QAction("➕ Добавить маркер", self)
+        # ROS connection status button
+        self._btn_ros = QPushButton()
+        self._btn_ros.setFlat(True)
+        self._btn_ros.setFixedWidth(160)
+        self._btn_ros.clicked.connect(self._open_connection_dialog)
+        self._update_ros_button()
+        tb.addWidget(self._btn_ros)
+
+        tb.addSeparator()
+
+        self._act_add_marker = QAction("Добавить маркер", self)
         self._act_add_marker.setCheckable(True)
         self._act_add_marker.setToolTip(
             "Включить режим добавления: кликните на карте для размещения маркера"
@@ -214,6 +225,38 @@ class MainWindow(QMainWindow):
         self._ctrl.set_armed(t.armed)
         if t.connected and t.armed:
             self._map_w.set_drone_position(t.x, t.y, t.yaw)
+        self._update_ros_button()
+
+    # ----------------------------------------------- ROS connection UI
+    def _update_ros_button(self):
+        state = self._controller.ros_state
+        if state == RosState.FULL:
+            t = self._controller.get_telemetry()
+            if t.connected:
+                self._btn_ros.setText("ROS: подключён")
+                self._btn_ros.setStyleSheet(
+                    "color:#6f6; font-weight:bold; border:1px solid #3a3; "
+                    "border-radius:3px; padding:2px 6px;")
+            else:
+                self._btn_ros.setText("ROS: нет ответа")
+                self._btn_ros.setStyleSheet(
+                    "color:#fa0; font-weight:bold; border:1px solid #a70; "
+                    "border-radius:3px; padding:2px 6px;")
+        elif state == RosState.ROSPY:
+            self._btn_ros.setText("ROS: нет пакета clover")
+            self._btn_ros.setStyleSheet(
+                "color:#f66; font-weight:bold; border:1px solid #833; "
+                "border-radius:3px; padding:2px 6px;")
+        else:
+            self._btn_ros.setText("ROS: симуляция")
+            self._btn_ros.setStyleSheet(
+                "color:#888; border:1px solid #555; "
+                "border-radius:3px; padding:2px 6px;")
+
+    def _open_connection_dialog(self):
+        dlg = ConnectionDialog(self._controller, self)
+        dlg.reconnect_requested.connect(self._update_ros_button)
+        dlg.exec_()
 
     # ---------------------------------------------------------------- theme
     def _set_dark_theme(self):

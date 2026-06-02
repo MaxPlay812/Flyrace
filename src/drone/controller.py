@@ -1,33 +1,60 @@
+"""Clover 4 drone controller.
+
+Detects three connection states:
+  FULL  — rospy + clover.srv available, drone reachable
+  ROSPY — rospy available but clover package missing on this machine
+  SIM   — no ROS at all, pure simulation fallback
+"""
 import copy
 import math
+import os
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Callable, List, Optional
 
+# ------------------------------------------------------------------ imports
 try:
     import rospy
-    from clover import srv as clover_srv
-    from std_srvs.srv import Trigger
-    _ROS_AVAILABLE = True
+    _ROSPY_OK = True
 except ImportError:
-    _ROS_AVAILABLE = False
+    _ROSPY_OK = False
+
+_CLOVER_OK = False
+_clover_srv = None
+if _ROSPY_OK:
+    try:
+        from clover import srv as _clover_srv   # type: ignore
+        from std_srvs.srv import Trigger as _Trigger
+        _CLOVER_OK = True
+    except ImportError:
+        pass
+
+
+class RosState(Enum):
+    FULL  = auto()   # rospy + clover.srv reachable
+    ROSPY = auto()   # rospy present but clover package missing
+    SIM   = auto()   # no ROS
 
 
 @dataclass
 class Telemetry:
-    x: float = 0.0       # m, field origin
-    y: float = 0.0       # m
-    z: float = 0.0       # m altitude
+    x: float = 0.0        # m, field origin
+    y: float = 0.0
+    z: float = 0.0        # m altitude
     vx: float = 0.0
     vy: float = 0.0
     vz: float = 0.0
-    yaw: float = 0.0     # radians
-    battery: float = 100.0  # %
+    yaw: float = 0.0      # radians
+    battery: float = 100.0
     armed: bool = False
     connected: bool = False
     mode: str = "MANUAL"
-    of_active: bool = False  # optical flow active
+    of_active: bool = False
+    ros_state: RosState = RosState.SIM
+    error_msg: str = ""
 
 
 class CloverController:
@@ -37,37 +64,69 @@ class CloverController:
         self._telemetry = Telemetry()
         self._lock = threading.Lock()
         self._callbacks: List[Callable] = []
-        self._running = False
+        self._running = True
         self._speed = 0.5
-        self.ros_available = _ROS_AVAILABLE
+        self._ros_state = RosState.SIM
 
-        if _ROS_AVAILABLE:
-            self._init_ros()
-        else:
+        if not _ROSPY_OK:
+            self._ros_state = RosState.SIM
             self._init_sim()
+        elif not _CLOVER_OK:
+            self._ros_state = RosState.ROSPY
+            self._telemetry.ros_state = RosState.ROSPY
+            self._telemetry.error_msg = (
+                "rospy найден, но пакет 'clover' не установлен на этом ПК.\n"
+                "Установите его или соберите catkin-воркспейс с пакетом clover.\n"
+                "Нажмите 'Настройки ROS' для инструкций."
+            )
+            self._init_sim()
+        else:
+            self._ros_state = RosState.FULL
+            self._init_ros()
+
+    # ------------------------------------------------------------------ props
+    @property
+    def ros_state(self) -> RosState:
+        return self._ros_state
+
+    @property
+    def ros_available(self) -> bool:
+        return self._ros_state == RosState.FULL
 
     # ------------------------------------------------------------------ setup
     def _init_ros(self):
-        from config import ROS_NS, TELEMETRY_HZ
+        from config import ROS_NS
         try:
-            rospy.init_node("clover_gui", anonymous=True, disable_signals=True)
+            if not rospy.core.is_initialized():
+                rospy.init_node("clover_gui", anonymous=True, disable_signals=True)
             ns = f"/{ROS_NS}"
-            self._svc_telem = rospy.ServiceProxy(f"{ns}/get_telemetry", clover_srv.GetTelemetry)
-            self._svc_nav = rospy.ServiceProxy(f"{ns}/navigate", clover_srv.Navigate)
-            self._svc_vel = rospy.ServiceProxy(f"{ns}/set_velocity", clover_srv.SetVelocity)
-            self._svc_land = rospy.ServiceProxy(f"{ns}/land", Trigger)
-            self._running = True
-            t = threading.Thread(target=self._poll_ros, daemon=True)
-            t.start()
+            # Wait up to 3 s for telemetry service before declaring connected
+            try:
+                rospy.wait_for_service(f"{ns}/get_telemetry", timeout=3.0)
+            except rospy.ROSException:
+                raise ConnectionError(
+                    f"Сервис {ns}/get_telemetry недоступен.\n"
+                    "Проверьте: ROS_MASTER_URI, WiFi-соединение с дроном."
+                )
+            self._svc_telem = rospy.ServiceProxy(
+                f"{ns}/get_telemetry", _clover_srv.GetTelemetry)
+            self._svc_nav = rospy.ServiceProxy(
+                f"{ns}/navigate", _clover_srv.Navigate)
+            self._svc_vel = rospy.ServiceProxy(
+                f"{ns}/set_velocity", _clover_srv.SetVelocity)
+            self._svc_land = rospy.ServiceProxy(f"{ns}/land", _Trigger)
+            threading.Thread(target=self._poll_ros, daemon=True).start()
         except Exception as exc:
-            print(f"[Controller] ROS init failed ({exc}), using simulation")
-            self.ros_available = False
+            err = str(exc)
+            with self._lock:
+                self._telemetry.connected = False
+                self._telemetry.error_msg = err
+            self._ros_state = RosState.ROSPY if _ROSPY_OK else RosState.SIM
             self._init_sim()
 
     def _init_sim(self):
         self._sim_t = 0.0
         self._sim_paused = True
-        self._running = True
         threading.Thread(target=self._run_sim, daemon=True).start()
 
     # -------------------------------------------------------------- ros loop
@@ -87,11 +146,14 @@ class CloverController:
                     self._telemetry.armed = t.armed
                     self._telemetry.connected = True
                     self._telemetry.mode = t.mode
+                    self._telemetry.ros_state = RosState.FULL
+                    self._telemetry.error_msg = ""
                     v = getattr(t, "voltage", 8.4)
-                    self._telemetry.battery = min(100, v / 8.4 * 100)
-            except Exception:
+                    self._telemetry.battery = min(100.0, v / 8.4 * 100)
+            except Exception as exc:
                 with self._lock:
                     self._telemetry.connected = False
+                    self._telemetry.error_msg = str(exc)
             self._notify()
             time.sleep(rate)
 
@@ -123,7 +185,7 @@ class CloverController:
                     self._telemetry.yaw = yaw
                     self._telemetry.armed = True
                     self._telemetry.connected = True
-                    self._telemetry.mode = "AUTO"
+                    self._telemetry.mode = "SIM"
                     self._telemetry.of_active = True
                     self._telemetry.battery = max(0.0, 100.0 - self._sim_t * 0.2)
                 self._sim_t += dt * self._speed * 2.5
@@ -140,6 +202,13 @@ class CloverController:
 
     def remove_telemetry_callback(self, cb: Callable):
         self._callbacks = [c for c in self._callbacks if c is not cb]
+
+    def reconnect(self):
+        """Attempt ROS reconnection in background (e.g. after env vars updated)."""
+        if not _CLOVER_OK:
+            return
+        self._ros_state = RosState.FULL
+        threading.Thread(target=self._init_ros, daemon=True).start()
 
     def takeoff(self, altitude: Optional[float] = None):
         from config import FLIGHT_ALT
@@ -195,7 +264,6 @@ class CloverController:
     def stop(self):
         self._running = False
 
-    # ---------------------------------------------------------------- private
     def _notify(self):
         t = self.get_telemetry()
         for cb in list(self._callbacks):
@@ -203,3 +271,51 @@ class CloverController:
                 cb(t)
             except Exception:
                 pass
+
+
+# ------------------------------------------------------------------ diagnostics
+def run_ros_diagnostics(master_uri: str = "") -> dict:
+    """Check ROS connectivity. Returns dict with keys: ok, items (list of (label, status, ok))."""
+    uri = master_uri or os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311")
+    items = []
+
+    # 1. rospy importable
+    items.append(("rospy установлен", "Да" if _ROSPY_OK else "НЕТ — установите ROS Noetic", _ROSPY_OK))
+
+    # 2. clover package importable
+    items.append(("clover пакет", "Да" if _CLOVER_OK else "НЕТ — нет типов сервисов", _CLOVER_OK))
+
+    # 3. ROS_MASTER_URI set
+    env_uri = os.environ.get("ROS_MASTER_URI", "")
+    items.append(("ROS_MASTER_URI", env_uri or "(не задан)", bool(env_uri)))
+
+    # 4. ROS_IP set
+    env_ip = os.environ.get("ROS_IP", os.environ.get("ROS_HOSTNAME", ""))
+    items.append(("ROS_IP", env_ip or "(не задан — может не работать)", bool(env_ip)))
+
+    # 5. Ping drone IP
+    host = uri.split("//")[-1].split(":")[0] if "//" in uri else "192.168.11.1"
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", "1", host],
+            capture_output=True, timeout=3
+        )
+        reachable = result.returncode == 0
+    except Exception:
+        reachable = False
+    items.append((f"Ping {host}", "Доступен" if reachable else "Недоступен", reachable))
+
+    # 6. rosmaster reachable (try xmlrpc)
+    master_ok = False
+    if _ROSPY_OK:
+        try:
+            import xmlrpc.client
+            proxy = xmlrpc.client.ServerProxy(uri)
+            code, _, _ = proxy.getSystemState("/diag")
+            master_ok = (code == 1)
+        except Exception:
+            pass
+    items.append(("rosmaster", "Отвечает" if master_ok else "Не отвечает", master_ok))
+
+    overall = _ROSPY_OK and _CLOVER_OK and master_ok
+    return {"ok": overall, "items": items, "host": host}
