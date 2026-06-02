@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (QAction, QMainWindow, QPushButton, QSplitter,
                               QStatusBar, QTabWidget, QToolBar, QWidget,
                               QVBoxLayout, QCheckBox, QLabel, QSizePolicy)
 
-from config import APP_TITLE, APP_VERSION, MARKERS_FILE
+from config import APP_TITLE, APP_VERSION, MARKERS_FILE, CAMERA_TOPIC
 from drone.controller import CloverController, Telemetry
 from models.marker import ArucoMarker, load_markers
 from vision.camera_thread import CameraThread
@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         self._controller = CloverController()
         self._camera = CameraThread(source=0)
         self._markers: List[ArucoMarker] = load_markers(MARKERS_FILE)
+        self._ros_cam_switched = False   # switch to drone cam once on first connect
 
         self._ctrl = ControlPanel()
         self._status = StatusWidget()
@@ -141,6 +142,7 @@ class MainWindow(QMainWindow):
 
         # Camera → camera widget
         self._camera.add_frame_callback(self._camera_w.on_frame)
+        self._camera_w.set_source_change_callback(self._switch_camera)
 
         # Camera widget → map (marker detection)
         self._camera_w.markers_detected.connect(self._on_markers_detected)
@@ -236,6 +238,24 @@ class MainWindow(QMainWindow):
         if t.connected and t.armed:
             self._map_w.set_drone_position(t.x, t.y, t.yaw)
         self._update_ros_button()
+        # Auto-switch camera to drone ROS topic on first successful connection
+        if t.connected and not self._ros_cam_switched:
+            self._ros_cam_switched = True
+            self._switch_camera(CAMERA_TOPIC)
+
+    def _switch_camera(self, source):
+        """Replace the running camera thread with a new source."""
+        if source is None:
+            source = "test"  # CameraThread will use test pattern for unknown str
+        self._camera.stop()
+        # Use 0 for "test" fallback path — device 0 falls through to test pattern
+        actual = source if source != "test" else 99
+        self._camera = CameraThread(source=actual)
+        self._camera.add_frame_callback(self._camera_w.on_frame)
+        self._camera.start()
+        label = str(source)
+        self._camera_w.set_source_label(label)
+        self._status_bar.showMessage(f"Камера: {label}")
 
     # ----------------------------------------------- ROS connection UI
     def _update_ros_button(self):

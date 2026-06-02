@@ -4,8 +4,8 @@ from typing import List, Optional
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QSizePolicy,
-                              QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
+                              QSizePolicy, QVBoxLayout, QWidget)
 
 from vision.aruco_detector import ArucoDetector, DetectedMarker
 from utils.cuda import OpticalFlowTracker, bgr2rgb, cuda_available
@@ -25,6 +25,8 @@ class CameraWidget(QWidget):
     """
 
     markers_detected = pyqtSignal(list)   # list[DetectedMarker]
+    # Internal signal: delivers processed frame to main thread safely
+    _frame_ready = pyqtSignal(object)     # tuple(np.ndarray, list[DetectedMarker])
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -32,6 +34,8 @@ class CameraWidget(QWidget):
         self._show_aruco = True
         self._show_of = False
         self._of_tracker = OpticalFlowTracker()
+        self._frame_ready.connect(self._on_frame_main)
+        self._source_change_cb = None   # set by main_window
         self._build_ui()
 
     # ---------------------------------------------------- layout
@@ -52,12 +56,23 @@ class CameraWidget(QWidget):
         gpu_badge = " (CUDA)" if cuda_available() else " (CPU)"
         self._chk_of.setText(f"Optical flow{gpu_badge}")
 
+        # Camera source selector
+        self._src_combo = QComboBox()
+        self._src_combo.addItems(["Webcam (0)", "Webcam (1)",
+                                  "Drone: /main_camera/image_raw", "Test pattern"])
+        self._src_combo.setFixedWidth(200)
+        self._src_combo.currentIndexChanged.connect(self._on_source_changed)
+
         tb.addWidget(self._chk_aruco)
         tb.addWidget(self._chk_of)
+        tb.addWidget(self._src_combo)
         tb.addStretch()
         self._info_label = QLabel("Нет сигнала")
         self._info_label.setStyleSheet("color: #aaa; font-size: 11px;")
         tb.addWidget(self._info_label)
+        self._src_label = QLabel("")
+        self._src_label.setStyleSheet("color: #666; font-size: 10px;")
+        tb.addWidget(self._src_label)
         lay.addLayout(tb)
 
         self._video_label = QLabel()
@@ -76,25 +91,48 @@ class CameraWidget(QWidget):
         self._detector.camera_matrix = matrix
         self._detector.dist_coeffs = dist
 
+    def set_source_change_callback(self, cb):
+        """Called by main_window so CameraWidget can request a source switch."""
+        self._source_change_cb = cb
+
+    def set_source_label(self, text: str):
+        self._src_label.setText(text)
+        # Sync combo without triggering callback
+        self._src_combo.blockSignals(True)
+        for i in range(self._src_combo.count()):
+            item = self._src_combo.itemText(i)
+            if text in item or item in text:
+                self._src_combo.setCurrentIndex(i)
+                break
+        self._src_combo.blockSignals(False)
+
+    def _on_source_changed(self, idx: int):
+        _SOURCES = [0, 1, "/main_camera/image_raw", None]
+        src = _SOURCES[idx]
+        if self._source_change_cb:
+            self._source_change_cb(src)
+
     def on_frame(self, frame: np.ndarray):
-        """Called from camera thread with a new BGR frame."""
+        """Called from camera thread — do CV work here, then signal main thread."""
         if not _CV2_OK:
             return
-
         detected: List[DetectedMarker] = []
         if self._show_aruco and self._detector.available:
             detected = self._detector.detect(frame)
             frame = self._detector.draw_markers(frame, detected)
-
         if self._show_of:
             frame = self._draw_optical_flow(frame)
-
         if detected:
             self.markers_detected.emit(detected)
-
-        self._update_display(frame, detected)
+        # Signal crosses thread boundary safely
+        self._frame_ready.emit((frame, detected))
 
     # ---------------------------------------------------- private
+    def _on_frame_main(self, data):
+        """Runs on main thread (connected via Qt signal)."""
+        frame, detected = data
+        self._update_display(frame, detected)
+
     def _draw_optical_flow(self, frame: np.ndarray) -> np.ndarray:
         vectors = self._of_tracker.track(frame)
         if not vectors:

@@ -56,6 +56,7 @@ class CameraThread(threading.Thread):
             except Exception:
                 pass
 
+
     # ------------------------------------------------------- ROS path
     def _start_ros(self):
         try:
