@@ -5,9 +5,9 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QAction, QMainWindow, QPushButton, QSplitter,
                               QStatusBar, QTabWidget, QToolBar, QWidget,
-                              QVBoxLayout, QCheckBox, QLabel)
+                              QVBoxLayout, QCheckBox, QLabel, QSizePolicy)
 
-from config import APP_TITLE, MARKERS_FILE
+from config import APP_TITLE, APP_VERSION, MARKERS_FILE
 from drone.controller import CloverController, Telemetry
 from models.marker import ArucoMarker, load_markers
 from vision.camera_thread import CameraThread
@@ -118,6 +118,14 @@ class MainWindow(QMainWindow):
         act_reset = QAction("Сброс гонки", self)
         act_reset.triggered.connect(lambda: self._status.reset_race())
         tb.addAction(act_reset)
+
+        # Right-align version label
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        tb.addWidget(spacer)
+        ver_lbl = QLabel(f"v{APP_VERSION}")
+        ver_lbl.setStyleSheet("color:#555; font-size:11px; padding-right:8px;")
+        tb.addWidget(ver_lbl)
 
         return tb
 

@@ -26,4 +26,5 @@ MARKERS_FILE = _os.path.join(
     _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
     "markers.json"
 )
-APP_TITLE = "Clover 4 — Воздушные гонки"
+APP_TITLE   = "Clover 4 — Воздушные гонки"
+APP_VERSION = "1.1.0"

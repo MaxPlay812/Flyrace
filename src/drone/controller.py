@@ -264,14 +264,28 @@ class CloverController:
         except rospy.ROSException:
             log.error(f"[5/5] Сервис {svc} не появился за 8 с")
             log.error("rosmaster работает, но clover-узел на дроне НЕ ЗАПУЩЕН")
+            # Try to discover actual namespace — clover might run under different NS
+            try:
+                from drone.discovery import discover_ros_info
+                info = discover_ros_info(master_uri)
+                if info["ok"]:
+                    if info["clover_ns"]:
+                        found = info["clover_ns"]
+                        log.warning(f"  ► Найден clover в неймспейсе: {found!r}")
+                        if found != f"/{ROS_NS}":
+                            log.warning(f"    Ожидался /{ROS_NS}, найден {found}")
+                            log.warning(f"    Решение: export CLOVER_NS={found.lstrip('/')}")
+                    else:
+                        log.warning(f"    rosmaster активен, clover-сервисы отсутствуют "
+                                    f"({len(info['services'])} других сервисов)")
+            except Exception:
+                pass
             log.error(f"Исправление:")
-            log.error(f"  ssh pi@{host} 'sudo systemctl restart clover'")
-            log.error(f"  ssh pi@{host} 'sudo systemctl status clover'")
-            log.error(f"  ssh pi@{host} 'rosservice list | grep clover'")
+            log.error(f"  1. Вкладка «Авто-настройка» → кнопка «Авто-настройка»")
+            log.error(f"  2. Или вручную: ssh pi@{host} 'sudo systemctl restart clover'")
             self._set_error(
                 f"rosmaster OK, но {svc} не отвечает.\n"
-                f"Перезапустите clover на дроне:\n"
-                f"  ssh pi@{host} 'sudo systemctl restart clover'"
+                f"Используйте вкладку «Авто-настройка» для автоматического исправления."
             )
             return
 

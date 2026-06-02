@@ -15,6 +15,7 @@ from drone.controller import RosState, run_ros_diagnostics, _ROSPY_OK, _CLOVER_O
 from gui.connection_guides import (GUIDE_QUICK, GUIDE_INSTALL,
                                    GUIDE_TROUBLESHOOT, GUIDE_CMDS)
 from gui.debug_widget import DebugWidget
+from gui.autosetup_widget import AutoSetupWidget
 from utils.debug_log import log
 
 _SSH_OPTS = ["-o", "StrictHostKeyChecking=no",
@@ -78,6 +79,7 @@ class ConnectionDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.addTab(self._tab_connect(),               "Подключение")
+        tabs.addTab(AutoSetupWidget(controller),       "Авто-настройка")
         tabs.addTab(self._tab_diag(),                  "Диагностика")
         tabs.addTab(self._tab_log(),                   "Лог подключения")
         tabs.addTab(_make_guide(GUIDE_QUICK),          "Быстрый старт")
@@ -115,37 +117,42 @@ class ConnectionDialog(QDialog):
         form.addRow("", row)
         lay.addWidget(gb)
 
-        ssh_gb = QGroupBox("SSH к дрону")
+        ssh_gb = QGroupBox("SSH к дрону (быстрые команды)")
         sh = QVBoxLayout(ssh_gb)
+
+        # Row 1: host field
+        row_host = QHBoxLayout()
+        row_host.addWidget(QLabel("Хост:"))
         self._ssh_host = QLineEdit(
             os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311")
             .split("//")[-1].split(":")[0])
+        row_host.addWidget(self._ssh_host, 1)
+        sh.addLayout(row_host)
+
+        # Row 2: action buttons
+        row_btns = QHBoxLayout()
+        for lbl, cmd in [
+            ("Статус clover",   "sudo systemctl status clover --no-pager -l"),
+            ("Сервисы ROS",     "rosservice list 2>&1 | grep clover"),
+            ("Журнал (50 строк)", "sudo journalctl -u clover -n 50 --no-pager"),
+        ]:
+            btn = QPushButton(lbl)
+            btn.clicked.connect(lambda _, c=cmd: self._ssh_run(c))
+            row_btns.addWidget(btn)
+        btn_restart = QPushButton("Починить clover ▶")
+        btn_restart.setStyleSheet(
+            "color:#fa0; font-weight:bold; border:1px solid #a70; "
+            "border-radius:3px; padding:2px 8px;")
+        btn_restart.clicked.connect(self._ssh_safe_restart)
+        row_btns.addWidget(btn_restart)
+        sh.addLayout(row_btns)
+
         self._ssh_out = QTextEdit()
         self._ssh_out.setReadOnly(True)
         self._ssh_out.setMaximumHeight(130)
         self._ssh_out.setStyleSheet(
             "background:#111; color:#8fc; "
             "font-family:monospace; font-size:11px;")
-
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Хост:"))
-        row2.addWidget(self._ssh_host, 1)
-        for lbl, cmd in [
-            ("Статус clover",   "sudo systemctl status clover --no-pager -l"),
-            ("Список сервисов", "rosservice list 2>&1 | grep clover"),
-        ]:
-            btn = QPushButton(lbl)
-            btn.clicked.connect(lambda _, c=cmd: self._ssh_run(c))
-            row2.addWidget(btn)
-
-        btn_restart = QPushButton("Починить clover (restart)")
-        btn_restart.setStyleSheet(
-            "color:#fa0; border:1px solid #a70; border-radius:3px; padding:2px 6px;")
-        btn_restart.clicked.connect(self._ssh_safe_restart)
-        row2.addWidget(btn_restart)
-
-        sh.addLayout(row2)
-        sh.addWidget(self._ssh_out)
         lay.addWidget(ssh_gb)
         lay.addStretch()
         return w
