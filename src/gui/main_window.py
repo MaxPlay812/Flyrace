@@ -21,6 +21,7 @@ from gui.map_widget import MapWidget
 from gui.status_widget import StatusWidget
 from gui.marker_dialog import MarkerManagerWidget
 from gui.connection_dialog import ConnectionDialog
+from gui.debug_widget import DebugWidget
 
 
 class MainWindow(QMainWindow):
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._camera_w, "Камера")
         self._tabs.addTab(self._map_w, "Карта поля")
         self._tabs.addTab(self._marker_mgr, "ArUco маркеры")
+        self._tabs.addTab(DebugWidget(), "Лог ROS")
 
         root_split.addWidget(left_split)
         root_split.addWidget(self._tabs)
