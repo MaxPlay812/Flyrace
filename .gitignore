@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+markers.json
+.claude-flow/
+*.egg-info/
+dist/
+build/
+.env
