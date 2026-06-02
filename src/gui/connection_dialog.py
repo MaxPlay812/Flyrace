@@ -8,184 +8,18 @@ import threading
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (QDialog, QDialogButtonBox, QFormLayout,
                               QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-                              QPushButton, QTabWidget, QTextEdit,
+                              QMessageBox, QPushButton, QTabWidget, QTextEdit,
                               QVBoxLayout, QWidget)
 
 from drone.controller import RosState, run_ros_diagnostics, _ROSPY_OK, _CLOVER_OK
+from gui.connection_guides import (GUIDE_QUICK, GUIDE_INSTALL,
+                                   GUIDE_TROUBLESHOOT, GUIDE_CMDS)
 from gui.debug_widget import DebugWidget
 from utils.debug_log import log
 
-
-# ═══════════════════════════════ Guide texts ══════════════════════════════════
-_GUIDE_QUICK = """\
-╔══════════════════════════════════════════════════════╗
-║      БЫСТРЫЙ СТАРТ — подключение к Clover 4          ║
-╚══════════════════════════════════════════════════════╝
-
-[1] Убедитесь что дрон включён и светодиод мигает.
-
-[2] Подключитесь к WiFi дрона:
-    SSID:   clover-XXXX
-    Пароль: cloverwifi
-
-[3] Проверьте что ROS Noetic установлен:
-    which roscore   →  должен вывести путь
-
-[4] Проверьте что пакет clover установлен:
-    python3 -c "from clover import srv; print('OK')"
-
-[5] Задайте переменные (один раз, добавьте в ~/.bashrc):
-    export ROS_MASTER_URI=http://192.168.11.1:11311
-    export ROS_IP=$(ip route get 192.168.11.1 | grep -oP 'src \\K[0-9.]+')
-    source ~/.bashrc
-
-[6] Проверьте связь:
-    ping 192.168.11.1                     ← должен пинговаться
-    nc -zv 192.168.11.1 11311             ← порт открыт?
-    rosservice list | grep clover         ← сервисы видны?
-
-[7] Запустите приложение:
-    ./run.sh
-
-══ Если ping есть, но сервисы не видны ══
-    ssh pi@192.168.11.1
-    sudo systemctl status clover
-    sudo systemctl restart clover
-"""
-
-_GUIDE_INSTALL = """\
-╔══════════════════════════════════════════════════════╗
-║      УСТАНОВКА ROS NOETIC + clover (Ubuntu 20.04)    ║
-╚══════════════════════════════════════════════════════╝
-
-── A. ROS Noetic ───────────────────────────────────────
-    sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu focal main" \\
-      > /etc/apt/sources.list.d/ros-latest.list'
-    curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc \\
-      | sudo apt-key add -
-    sudo apt update
-    sudo apt install ros-noetic-desktop python3-rospy
-
-    # Добавить в ~/.bashrc:
-    source /opt/ros/noetic/setup.bash
-
-── B. Пакет clover (из исходников) ─────────────────────
-    sudo apt install python3-catkin-tools python3-pip -y
-    mkdir -p ~/catkin_ws/src && cd ~/catkin_ws/src
-    git clone --depth 1 https://github.com/clover-robotics/clover.git
-
-    cd ~/catkin_ws
-    catkin_make
-    # или: catkin build
-
-    # Добавить в ~/.bashrc:
-    source ~/catkin_ws/devel/setup.bash
-
-── C. Переменные окружения ──────────────────────────────
-    # Добавить в ~/.bashrc:
-    export ROS_MASTER_URI=http://192.168.11.1:11311
-    export ROS_IP=$(ip route get 192.168.11.1 | grep -oP 'src \\K[0-9.]+')
-
-── D. Проверка ──────────────────────────────────────────
-    source ~/.bashrc
-    python3 -c "import rospy; from clover import srv; print('ROS OK')"
-    rosservice list | grep clover
-"""
-
-_GUIDE_TROUBLESHOOT = """\
-╔══════════════════════════════════════════════════════╗
-║      ДИАГНОСТИКА ПРОБЛЕМ                             ║
-╚══════════════════════════════════════════════════════╝
-
-СИМПТОМ: кнопка «ROS: симуляция» не меняется
-─────────────────────────────────────────────────────
-• rospy не установлен:
-    sudo apt install ros-noetic-desktop
-• clover пакет отсутствует:
-    python3 -c "from clover import srv"
-    → ошибка? Установите (шаг B в Установка)
-
-СИМПТОМ: «ROS: нет пакета clover»
-─────────────────────────────────────────────────────
-• Соберите clover и source-уйте workspace:
-    source ~/catkin_ws/devel/setup.bash
-    python3 -c "from clover import srv; print('OK')"
-
-СИМПТОМ: ping работает, но порт 11311 закрыт
-─────────────────────────────────────────────────────
-• rosmaster не запущен на дроне:
-    ssh pi@192.168.11.1 'rosnode list'
-• Перезапустить clover:
-    ssh pi@192.168.11.1 'sudo systemctl restart clover'
-    ssh pi@192.168.11.1 'sudo systemctl status clover'
-
-СИМПТОМ: порт 11311 открыт, но сервис get_telemetry не появляется
-─────────────────────────────────────────────────────
-• clover-узел запустился не полностью:
-    ssh pi@192.168.11.1 'rosservice list 2>&1 | grep clover'
-    ssh pi@192.168.11.1 'sudo journalctl -u clover -n 50'
-• Перезагрузить дрон:
-    ssh pi@192.168.11.1 'sudo reboot'
-
-СИМПТОМ: ping не проходит
-─────────────────────────────────────────────────────
-• Проверьте подключение к WiFi дрона:
-    ip addr show
-    nmcli connection show --active
-• Иногда нужно:
-    nmcli device wifi connect clover-XXXX password cloverwifi
-
-СИМПТОМ: «ROS_IP не задан»
-─────────────────────────────────────────────────────
-• Без ROS_IP дрон не может вызывать обратно наш узел!
-• Задайте вручную:
-    export ROS_IP=$(ip route get 192.168.11.1 | grep -oP 'src \\K[0-9.]+')
-• Или воспользуйтесь кнопкой «Автодетект ROS_IP»
-
-ПОЛНАЯ ДИАГНОСТИКА В ОДНУ КОМАНДУ:
-─────────────────────────────────────────────────────
-    ping -c1 192.168.11.1           # сеть
-    nc -zv 192.168.11.1 11311       # rosmaster TCP
-    rosservice list 2>&1            # clover сервисы
-    python3 -c "from clover import srv; print('OK')"
-"""
-
-_GUIDE_CMDS = """\
-╔══════════════════════════════════════════════════════╗
-║      ПОЛЕЗНЫЕ КОМАНДЫ                                ║
-╚══════════════════════════════════════════════════════╝
-
-── Сеть ────────────────────────────────────────────────
-    ip addr show
-    ip route get 192.168.11.1
-    ping -c3 192.168.11.1
-    nc -zv 192.168.11.1 11311
-
-── ROS ─────────────────────────────────────────────────
-    rosnode list
-    rosservice list | grep clover
-    rosservice call /clover/get_telemetry "frame_id: 'map'"
-    rostopic list
-    rostopic echo /main_camera/image_raw -n1
-
-── SSH на дрон ─────────────────────────────────────────
-    ssh pi@192.168.11.1           # пароль: raspberry
-    sudo systemctl status clover
-    sudo systemctl restart clover
-    sudo journalctl -u clover -n 100
-    rosnode list                  # на борту дрона
-
-── Python проверки ─────────────────────────────────────
-    python3 -c "import rospy; print(rospy.__file__)"
-    python3 -c "from clover import srv; print('clover OK')"
-    echo $ROS_MASTER_URI
-    echo $ROS_IP
-
-── WiFi ────────────────────────────────────────────────
-    nmcli device wifi list
-    nmcli device wifi connect clover-XXXX password cloverwifi
-    nmcli connection show --active
-"""
+_SSH_OPTS = ["-o", "StrictHostKeyChecking=no",
+             "-o", "ConnectTimeout=5",
+             "-o", "BatchMode=no"]
 
 
 # ═══════════════════════════════ Widgets ══════════════════════════════════════
@@ -228,14 +62,12 @@ class ConnectionDialog(QDialog):
         self.setMinimumSize(720, 620)
         self._build_ui()
         self._refresh_error()
-        # Auto-run diagnostics
         QTimer.singleShot(200, self._run_diag)
 
     # ------------------------------------------------------------ build
     def _build_ui(self):
         lay = QVBoxLayout(self)
 
-        # Error banner
         self._err_box = QLabel()
         self._err_box.setWordWrap(True)
         self._err_box.setStyleSheet(
@@ -245,13 +77,13 @@ class ConnectionDialog(QDialog):
         lay.addWidget(self._err_box)
 
         tabs = QTabWidget()
-        tabs.addTab(self._tab_connect(), "Подключение")
-        tabs.addTab(self._tab_diag(),    "Диагностика")
-        tabs.addTab(self._tab_log(),     "Лог подключения")
-        tabs.addTab(_make_guide(_GUIDE_QUICK),         "Быстрый старт")
-        tabs.addTab(_make_guide(_GUIDE_INSTALL),       "Установка")
-        tabs.addTab(_make_guide(_GUIDE_TROUBLESHOOT),  "Решение проблем")
-        tabs.addTab(_make_guide(_GUIDE_CMDS),          "Команды")
+        tabs.addTab(self._tab_connect(),               "Подключение")
+        tabs.addTab(self._tab_diag(),                  "Диагностика")
+        tabs.addTab(self._tab_log(),                   "Лог подключения")
+        tabs.addTab(_make_guide(GUIDE_QUICK),          "Быстрый старт")
+        tabs.addTab(_make_guide(GUIDE_INSTALL),        "Установка")
+        tabs.addTab(_make_guide(GUIDE_TROUBLESHOOT),   "Решение проблем")
+        tabs.addTab(_make_guide(GUIDE_CMDS),           "Команды")
         lay.addWidget(tabs, 1)
 
         btns = QDialogButtonBox(QDialogButtonBox.Close)
@@ -265,21 +97,18 @@ class ConnectionDialog(QDialog):
 
         gb = QGroupBox("Переменные окружения ROS")
         form = QFormLayout(gb)
-
         self._uri_edit = QLineEdit(
             os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311"))
-        self._ip_edit  = QLineEdit(
+        self._ip_edit = QLineEdit(
             os.environ.get("ROS_IP", os.environ.get("ROS_HOSTNAME", "")))
         self._ip_edit.setPlaceholderText(
             "Ваш IP на WiFi дрона — нажмите «Автодетект»")
-
         form.addRow("ROS_MASTER_URI:", self._uri_edit)
         form.addRow("ROS_IP:", self._ip_edit)
-
         row = QHBoxLayout()
         btn_apply = QPushButton("Применить и переподключить")
         btn_apply.clicked.connect(self._on_apply)
-        btn_auto  = QPushButton("Автодетект ROS_IP")
+        btn_auto = QPushButton("Автодетект ROS_IP")
         btn_auto.clicked.connect(self._autodetect_ip)
         row.addWidget(btn_apply)
         row.addWidget(btn_auto)
@@ -293,21 +122,28 @@ class ConnectionDialog(QDialog):
             .split("//")[-1].split(":")[0])
         self._ssh_out = QTextEdit()
         self._ssh_out.setReadOnly(True)
-        self._ssh_out.setMaximumHeight(120)
+        self._ssh_out.setMaximumHeight(130)
         self._ssh_out.setStyleSheet(
             "background:#111; color:#8fc; "
             "font-family:monospace; font-size:11px;")
+
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("Хост:"))
         row2.addWidget(self._ssh_host, 1)
         for lbl, cmd in [
-            ("Статус clover", "sudo systemctl status clover --no-pager -l"),
+            ("Статус clover",   "sudo systemctl status clover --no-pager -l"),
             ("Список сервисов", "rosservice list 2>&1 | grep clover"),
-            ("Перезапустить clover", "sudo systemctl restart clover"),
         ]:
             btn = QPushButton(lbl)
             btn.clicked.connect(lambda _, c=cmd: self._ssh_run(c))
             row2.addWidget(btn)
+
+        btn_restart = QPushButton("Починить clover (restart)")
+        btn_restart.setStyleSheet(
+            "color:#fa0; border:1px solid #a70; border-radius:3px; padding:2px 6px;")
+        btn_restart.clicked.connect(self._ssh_safe_restart)
+        row2.addWidget(btn_restart)
+
         sh.addLayout(row2)
         sh.addWidget(self._ssh_out)
         lay.addWidget(ssh_gb)
@@ -318,18 +154,15 @@ class ConnectionDialog(QDialog):
     def _tab_diag(self) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
-
         self._diag_msg = QLabel("Нажмите «Проверить» для диагностики")
         self._diag_msg.setStyleSheet(
             "color:#aaa; font-size:12px; font-weight:bold;")
         lay.addWidget(self._diag_msg)
-
         self._diag_area = QWidget()
         self._diag_area_lay = QVBoxLayout(self._diag_area)
         self._diag_area_lay.setContentsMargins(0, 0, 0, 0)
         self._diag_area_lay.setSpacing(3)
         lay.addWidget(self._diag_area, 1)
-
         btn_row = QHBoxLayout()
         btn_check = QPushButton("Проверить снова")
         btn_check.clicked.connect(self._run_diag)
@@ -338,7 +171,6 @@ class ConnectionDialog(QDialog):
         lay.addLayout(btn_row)
         return w
 
-    # -------------------------------------------------------- tab: log
     def _tab_log(self) -> QWidget:
         return DebugWidget()
 
@@ -355,13 +187,6 @@ class ConnectionDialog(QDialog):
     def _run_diag(self):
         self._diag_msg.setText("Проверка…")
         uri = self._uri_edit.text().strip()
-        threading.Thread(
-            target=lambda: QTimer.singleShot(
-                0, lambda: self._update_diag(run_ros_diagnostics(uri))
-            ),
-            daemon=True
-        ).start()
-        # run in thread, update in main thread
         threading.Thread(target=self._diag_thread, args=(uri,), daemon=True).start()
 
     def _diag_thread(self, uri: str):
@@ -387,20 +212,34 @@ class ConnectionDialog(QDialog):
                 "color:#f96; font-size:12px; font-weight:bold;")
         self._refresh_error()
 
-    # -------------------------------------------------------- SSH
+    # -------------------------------------------------------- SSH helpers
+    def _validate_ssh_host(self, host: str) -> tuple:
+        """Returns (ok: bool, error_or_warning: str)."""
+        if not host:
+            return False, "Хост не задан"
+        if not re.match(r'^[a-zA-Z0-9._-]+$', host):
+            return False, f"Недопустимые символы в хосте: {host!r}"
+        expected = (os.environ.get("ROS_MASTER_URI", "")
+                    .split("//")[-1].split(":")[0])
+        if expected and host != expected:
+            return True, (f"Хост {host} отличается от ROS_MASTER_URI "
+                          f"({expected}). Подключаемся к правильному дрону?")
+        return True, ""
+
     def _ssh_run(self, remote_cmd: str):
         host = self._ssh_host.text().strip() or "192.168.11.1"
-        cmd  = (f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "
-                f"-o BatchMode=no pi@{host} '{remote_cmd}'")
+        ok, warn = self._validate_ssh_host(host)
+        if not ok:
+            self._ssh_out.setPlainText(f"Ошибка: {warn}")
+            return
+        cmd = ["ssh"] + _SSH_OPTS + [f"pi@{host}", remote_cmd]
         self._ssh_out.setPlainText(f"$ {remote_cmd}\n\nПодключение…")
-        log.info(f"SSH: {cmd}")
+        log.info(f"SSH {host}: {remote_cmd}")
         threading.Thread(target=self._ssh_thread, args=(cmd,), daemon=True).start()
 
-    def _ssh_thread(self, cmd: str):
+    def _ssh_thread(self, cmd: list):
         try:
-            r = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=12
-            )
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
             out = (r.stdout + r.stderr).strip() or "(нет вывода)"
         except subprocess.TimeoutExpired:
             out = "Таймаут SSH (12 с)"
@@ -409,6 +248,82 @@ class ConnectionDialog(QDialog):
         log.info(f"SSH результат:\n{out}")
         QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(out))
 
+    # -------------------------------------------------------- safe restart
+    def _ssh_safe_restart(self):
+        host = self._ssh_host.text().strip() or "192.168.11.1"
+        ok, warn = self._validate_ssh_host(host)
+        if not ok:
+            self._ssh_out.setPlainText(f"Ошибка: {warn}")
+            return
+
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Перезапуск clover")
+        dlg.setIcon(QMessageBox.Warning)
+        dlg.setText(
+            f"Перезапустить сервис clover на дроне {host}?\n\n"
+            "⚠  Убедитесь что дрон НА ЗЕМЛЕ и НЕ ВООРУЖЁН!\n"
+            "Перезапуск сервиса на летящем дроне отключит моторы.")
+        if warn:
+            dlg.setInformativeText(warn)
+        dlg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        dlg.setDefaultButton(QMessageBox.Cancel)
+        if dlg.exec_() != QMessageBox.Yes:
+            return
+
+        self._ssh_out.setPlainText(f"[1/2] Проверяю armed-статус на {host}…")
+        log.info(f"SSH safe-restart: проверка armed на {host}")
+        threading.Thread(
+            target=self._ssh_restart_thread, args=(host,), daemon=True
+        ).start()
+
+    def _ssh_restart_thread(self, host: str):
+        # Step 1: check armed status via telemetry service
+        check = (
+            "rosservice call /clover/get_telemetry \"frame_id: 'map'\" 2>&1 "
+            "|| echo SERVICE_UNAVAILABLE"
+        )
+        cmd1 = ["ssh"] + _SSH_OPTS + [f"pi@{host}", check]
+        try:
+            r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=10)
+            out1 = r1.stdout + r1.stderr
+        except subprocess.TimeoutExpired:
+            QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(
+                "Таймаут SSH при проверке статуса (10 с)"))
+            return
+        except Exception as e:
+            QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(
+                f"SSH ошибка: {e}"))
+            return
+
+        if "armed: True" in out1:
+            msg = ("🛑 ОТМЕНЕНО: дрон В ВОЗДУХЕ (armed=True)!\n\n"
+                   "Перезапуск запрещён — посадите дрон сначала.\n\n"
+                   f"Телеметрия:\n{out1.strip()}")
+            log.error("SSH restart отменён: дрон вооружён (armed=True)")
+            QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(msg))
+            return
+
+        # Step 2: restart service
+        log.info(f"SSH restart clover на {host}: дрон не вооружён — перезапускаем")
+        QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(
+            "[2/2] Дрон не вооружён — перезапускаю clover…"))
+
+        restart = ("sudo systemctl restart clover "
+                   "&& sleep 3 "
+                   "&& sudo systemctl status clover --no-pager -l 2>&1")
+        cmd2 = ["ssh"] + _SSH_OPTS + [f"pi@{host}", restart]
+        try:
+            r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=25)
+            out2 = (r2.stdout + r2.stderr).strip() or "(нет вывода)"
+        except subprocess.TimeoutExpired:
+            out2 = "Таймаут (25 с) — команда могла выполниться, проверьте статус."
+        except Exception as e:
+            out2 = f"Ошибка: {e}"
+
+        log.info(f"SSH restart результат:\n{out2}")
+        QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(
+            f"sudo systemctl restart clover\n\n{out2}"))
+
     # -------------------------------------------------------- apply
     def _autodetect_ip(self):
         uri  = self._uri_edit.text().strip() or "http://192.168.11.1:11311"
@@ -416,8 +331,7 @@ class ConnectionDialog(QDialog):
         try:
             r = subprocess.run(
                 ["ip", "route", "get", host],
-                capture_output=True, text=True, timeout=3
-            )
+                capture_output=True, text=True, timeout=3)
             m = re.search(r'src\s+([\d.]+)', r.stdout)
             if m:
                 self._ip_edit.setText(m.group(1))
