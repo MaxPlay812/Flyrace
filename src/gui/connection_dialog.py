@@ -79,7 +79,7 @@ class ConnectionDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.addTab(self._tab_connect(),               "Подключение")
-        tabs.addTab(AutoSetupWidget(controller),       "Авто-настройка")
+        tabs.addTab(AutoSetupWidget(self._controller), "Авто-настройка")
         tabs.addTab(self._tab_diag(),                  "Диагностика")
         tabs.addTab(self._tab_log(),                   "Лог подключения")
         tabs.addTab(_make_guide(GUIDE_QUICK),          "Быстрый старт")
