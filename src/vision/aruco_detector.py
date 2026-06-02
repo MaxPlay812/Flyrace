@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, List
 import numpy as np
 
@@ -62,7 +62,8 @@ class ArucoDetector:
     def detect(self, frame: np.ndarray) -> List[DetectedMarker]:
         if not self.available or frame is None:
             return []
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        from utils.cuda import bgr2gray
+        gray = bgr2gray(frame)
         if _NEW_API:
             corners, ids, _ = _DETECTOR.detectMarkers(gray)
         else:

@@ -3,13 +3,14 @@ import math
 from typing import List, Optional
 
 from PyQt5.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt5.QtGui import (QBrush, QColor, QFont, QPainter, QPen,
+from PyQt5.QtGui import (QBrush, QColor, QPainter, QPen,
                          QPainterPath, QPolygonF)
 from PyQt5.QtWidgets import QAction, QMenu, QWidget
 
 from config import (FIELD_H, FIELD_W, GAP_LEN, POLE_1, POLE_2,
                     POLE_DIAMETER, TRACK_RADIUS)
 from models.marker import ArucoMarker, ZoneType
+from utils.compat import mono_font, sans_font
 
 _ZONE_COLOR = {
     ZoneType.NORMAL:     QColor(80,  130, 255, 200),
@@ -110,7 +111,7 @@ class MapWidget(QWidget):
         p.drawRect(rect)
         # Axis labels
         p.setPen(QColor(90, 110, 90))
-        p.setFont(QFont("Menlo", 7))
+        p.setFont(mono_font(7))
         for gx in range(0, FIELD_W + 1, 500):
             pt = self._f2w(gx, 0)
             p.drawText(QPointF(pt.x() - 10, pt.y() + 14), f"{gx}")
@@ -140,7 +141,7 @@ class MapWidget(QWidget):
             c = self._f2w(px, py)
             p.drawEllipse(c, r, r)
         p.setPen(QColor(220, 220, 220))
-        p.setFont(QFont("Arial", 7))
+        p.setFont(sans_font(7))
         for i, (px, py) in enumerate((POLE_1, POLE_2), 1):
             c = self._f2w(px, py)
             p.drawText(c + QPointF(-6, -r - 3), f"P{i}")
@@ -154,7 +155,7 @@ class MapWidget(QWidget):
 
     def _paint_markers(self, p: QPainter):
         s, _, _ = self._transform()
-        font = QFont("Arial", max(7, int(8 * s * 3)))
+        font = sans_font(max(7, int(8 * s * 3)))
         p.setFont(font)
         for m in self._markers:
             c = self._f2w(m.x, m.y)
@@ -194,7 +195,7 @@ class MapWidget(QWidget):
     def _paint_legend(self, p: QPainter):
         items = [(c, zt.label()) for zt, c in _ZONE_COLOR.items()]
         x0, y0 = 6, 6
-        p.setFont(QFont("Arial", 8))
+        p.setFont(sans_font(8))
         for i, (color, lbl) in enumerate(items):
             y = y0 + i * 16
             p.fillRect(QRectF(x0, y, 12, 11), color)

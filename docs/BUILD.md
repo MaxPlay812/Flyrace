@@ -84,6 +84,52 @@ POLE_2  = (3000, 1500)   # позиция столба 2
 TRACK_RADIUS = 500       # радиус трека, мм
 ```
 
+## CUDA-ускорение (Windows / Linux)
+
+Стандартный `opencv-contrib-python` из pip не включает CUDA.  
+Для GPU-ускорения optical flow и обработки кадров нужна сборка OpenCV с флагом `WITH_CUDA=ON`.
+
+### Проверка CUDA
+
+```bash
+python -c "import cv2; print(cv2.cuda.getCudaEnabledDeviceCount())"
+# 0 — CUDA не найдена, >0 — GPU готов
+```
+
+### Сборка OpenCV с CUDA (Ubuntu 20.04+)
+
+```bash
+sudo apt install -y libopencv-dev cmake build-essential
+git clone https://github.com/opencv/opencv.git
+git clone https://github.com/opencv/opencv_contrib.git
+
+mkdir opencv/build && cd opencv/build
+cmake .. \
+  -DOPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
+  -DWITH_CUDA=ON \
+  -DCUDA_ARCH_BIN="8.6"   \
+  -DBUILD_opencv_python3=ON \
+  -DPYTHON3_EXECUTABLE=$(which python3) \
+  -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+sudo make install
+```
+
+> Замените `8.6` на вычислительную способность вашей GPU  
+> (RTX 30xx = 8.6, RTX 20xx = 7.5, GTX 10xx = 6.1).
+
+### Готовые сборки (Windows)
+
+Бинарные пакеты OpenCV с CUDA для Windows:  
+https://github.com/cudawarped/opencv-python-cuda-wheels/releases
+
+```bash
+pip uninstall opencv-contrib-python
+pip install opencv-contrib-python-cuda-*.whl
+```
+
+Приложение автоматически обнаружит CUDA и покажет **[CUDA]** рядом с кнопкой Optical flow.
+
 ## Тестирование
 
 ```bash
@@ -93,6 +139,8 @@ from config import *
 from models.marker import ArucoMarker, ZoneType
 from drone.controller import CloverController
 from vision.aruco_detector import ArucoDetector
-print('OK')
+from utils.cuda import cuda_available, cuda_info
+print('OK, CUDA:', cuda_available())
+print(cuda_info())
 "
 ```

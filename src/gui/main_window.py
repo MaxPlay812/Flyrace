@@ -12,6 +12,7 @@ from drone.controller import CloverController, Telemetry
 from models.marker import ArucoMarker, load_markers
 from vision.camera_thread import CameraThread
 from vision.aruco_detector import DetectedMarker
+from utils.cuda import cuda_available, cuda_info
 
 from gui.control_panel import ControlPanel
 from gui.camera_widget import CameraWidget
@@ -76,7 +77,8 @@ class MainWindow(QMainWindow):
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
         sim = "" if self._controller.ros_available else " [СИМУЛЯЦИЯ]"
-        self._status_bar.showMessage(f"Clover 4 GUI готов{sim}")
+        gpu = "  |  GPU: " + ("CUDA" if cuda_available() else "нет")
+        self._status_bar.showMessage(f"Clover 4 GUI готов{sim}{gpu}")
 
     def _build_toolbar(self) -> QToolBar:
         tb = QToolBar("Основная")
