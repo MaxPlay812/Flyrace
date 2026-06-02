@@ -49,26 +49,38 @@ python src/main.py
 ```
 Flyrace/
 ├── src/
-│   ├── main.py              # Точка входа
-│   ├── config.py            # Константы (поле, скорость, ROS)
+│   ├── main.py                    # Точка входа
+│   ├── config.py                  # Константы поля, дрона, APP_VERSION
 │   ├── models/
-│   │   └── marker.py        # Модель ArUco маркера
+│   │   └── marker.py              # Модель ArUco маркера
 │   ├── drone/
-│   │   └── controller.py    # Интерфейс дрона (ROS / симуляция)
+│   │   ├── controller.py          # Интерфейс дрона (ROS / симуляция)
+│   │   ├── ssh_setup.py           # SSH-авто-настройка (6 шагов)
+│   │   └── discovery.py           # XML-RPC discovery топиков/сервисов
 │   ├── vision/
-│   │   ├── aruco_detector.py # Детектор маркеров ArUco
-│   │   └── camera_thread.py  # Захват видео (ROS / OpenCV)
+│   │   ├── aruco_detector.py      # Детектор маркеров ArUco
+│   │   └── camera_thread.py       # Захват видео (ROS / OpenCV)
+│   ├── utils/
+│   │   ├── compat.py              # Кросс-платформенные шрифты
+│   │   ├── cuda.py                # CUDA детектор + optical flow
+│   │   └── debug_log.py           # Thread-safe лог → GUI виджет
 │   └── gui/
-│       ├── main_window.py    # Главное окно
-│       ├── control_panel.py  # Панель управления полётом
-│       ├── camera_widget.py  # Виджет камеры с наложением
-│       ├── map_widget.py     # Карта поля
-│       ├── status_widget.py  # Статус системы
-│       └── marker_dialog.py  # Менеджер ArUco маркеров
+│       ├── main_window.py         # Главное окно (версия в тулбаре)
+│       ├── control_panel.py       # Панель управления полётом
+│       ├── camera_widget.py       # Виджет камеры с наложением
+│       ├── map_widget.py          # Карта поля
+│       ├── status_widget.py       # Статус, таймер гонки
+│       ├── marker_dialog.py       # Менеджер ArUco маркеров
+│       ├── connection_dialog.py   # Диалог подключения (8 вкладок)
+│       ├── connection_guides.py   # Тексты справочников
+│       ├── autosetup_widget.py    # Авто-настройка + поиск топиков
+│       └── debug_widget.py        # Живой лог подключения
 ├── docs/
-│   ├── BUILD.md             # Этот файл
-│   └── DEPLOY.md            # Деплой на Raspberry Pi
-├── markers.json             # Сохранённые маркеры (создаётся автоматически)
+│   ├── BUILD.md                   # Этот файл
+│   ├── DEPLOY.md                  # Деплой на Raspberry Pi
+│   ├── ROS_UBUNTU.md              # Подключение внешнего Ubuntu-ПК
+│   └── PROJECT_MEMORY.md         # База знаний: проблемы и решения
+├── markers.json                   # Сохранённые маркеры (авто-создаётся)
 └── requirements.txt
 ```
 
