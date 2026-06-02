@@ -110,7 +110,7 @@ class MapWidget(QWidget):
         p.drawRect(rect)
         # Axis labels
         p.setPen(QColor(90, 110, 90))
-        p.setFont(QFont("Consolas", 7))
+        p.setFont(QFont("Menlo", 7))
         for gx in range(0, FIELD_W + 1, 500):
             pt = self._f2w(gx, 0)
             p.drawText(QPointF(pt.x() - 10, pt.y() + 14), f"{gx}")

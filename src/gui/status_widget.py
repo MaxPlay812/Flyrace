@@ -11,7 +11,7 @@ from drone.controller import Telemetry
 
 def _colored_label(color: str) -> QLabel:
     lbl = QLabel("—")
-    lbl.setStyleSheet(f"color: {color}; font-family: Consolas; font-size: 12px;")
+    lbl.setStyleSheet(f"color: {color}; font-family: Menlo, Courier; font-size: 12px;")
     return lbl
 
 
@@ -94,10 +94,10 @@ class StatusWidget(QWidget):
     def update_telemetry(self, t: Telemetry):
         if t.connected:
             self._lbl_conn.setText("Подключён")
-            self._lbl_conn.setStyleSheet("color:#8f8;font-family:Consolas;font-size:12px")
+            self._lbl_conn.setStyleSheet("color:#8f8;font-family:Menlo,Courier;font-size:12px")
         else:
             self._lbl_conn.setText("Нет связи")
-            self._lbl_conn.setStyleSheet("color:#f88;font-family:Consolas;font-size:12px")
+            self._lbl_conn.setStyleSheet("color:#f88;font-family:Menlo,Courier;font-size:12px")
 
         self._lbl_mode.setText(t.mode)
         self._lbl_of.setText("Активен" if t.of_active else "—")
@@ -143,7 +143,7 @@ class StatusWidget(QWidget):
         self._lbl_score.setText(str(score))
         self._lbl_score.setStyleSheet(
             f"color:{'#8f8' if score >= 0 else '#f88'};"
-            "font-family:Consolas;font-size:12px"
+            "font-family:Menlo,Courier;font-size:12px"
         )
 
     def _update_clock(self):
