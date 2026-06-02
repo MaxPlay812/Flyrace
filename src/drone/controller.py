@@ -97,6 +97,12 @@ def _dump_env():
     log.debug("────────────────────────────────────────────────────")
 
 
+def _svc_path(ns: str, name: str) -> str:
+    """Build /ns/name; handles root namespace (ns='/') → /name."""
+    ns = ns.rstrip("/")
+    return f"{ns}/{name}" if ns else f"/{name}"
+
+
 def _dump_interfaces():
     """Log all active network interfaces with IPs."""
     try:
@@ -254,50 +260,61 @@ class CloverController:
             self._set_error(str(e))
             return
 
-        # ── Step 5: wait_for_service ──────────────────────────────────────
-        ns = f"/{ROS_NS}"
-        svc = f"{ns}/get_telemetry"
+        # ── Step 5: wait_for_service (+ namespace auto-discovery) ────────────
+        ns_env = os.environ.get("CLOVER_NS", "")
+        ns  = f"/{ns_env}" if ns_env else f"/{ROS_NS}"
+        svc = _svc_path(ns, "get_telemetry")
         log.info(f"[5/5] wait_for_service {svc} (до 8 с)...")
         try:
             rospy.wait_for_service(svc, timeout=8.0)
             success(f"[5/5] Сервис {svc}: доступен!")
         except rospy.ROSException:
-            log.error(f"[5/5] Сервис {svc} не появился за 8 с")
-            log.error("rosmaster работает, но clover-узел на дроне НЕ ЗАПУЩЕН")
-            # Try to discover actual namespace — clover might run under different NS
+            log.warning(f"[5/5] {svc} не найден — авто-поиск неймспейса…")
             try:
                 from drone.discovery import discover_ros_info
                 info = discover_ros_info(master_uri)
-                if info["ok"]:
-                    if info["clover_ns"]:
-                        found = info["clover_ns"]
-                        log.warning(f"  ► Найден clover в неймспейсе: {found!r}")
-                        if found != f"/{ROS_NS}":
-                            log.warning(f"    Ожидался /{ROS_NS}, найден {found}")
-                            log.warning(f"    Решение: export CLOVER_NS={found.lstrip('/')}")
-                    else:
-                        log.warning(f"    rosmaster активен, clover-сервисы отсутствуют "
-                                    f"({len(info['services'])} других сервисов)")
+                found_ns = info.get("clover_ns") if info.get("ok") else None
             except Exception:
-                pass
-            log.error(f"Исправление:")
-            log.error(f"  1. Вкладка «Авто-настройка» → кнопка «Авто-настройка»")
-            log.error(f"  2. Или вручную: ssh pi@{host} 'sudo systemctl restart clover'")
-            self._set_error(
-                f"rosmaster OK, но {svc} не отвечает.\n"
-                f"Используйте вкладку «Авто-настройка» для автоматического исправления."
-            )
-            return
+                found_ns = None
+
+            if found_ns and found_ns != ns:
+                ns  = found_ns
+                svc = _svc_path(ns, "get_telemetry")
+                log.info(f"  → Пробую авто-найденный неймспейс: {svc}")
+                try:
+                    rospy.wait_for_service(svc, timeout=5.0)
+                    success(f"[5/5] {svc}: доступен (неймспейс: {found_ns!r})")
+                    ns_label = found_ns.lstrip("/") or "/"
+                    log.warning(f"  Неймспейс дрона: {found_ns!r} (не /{ROS_NS})")
+                    log.warning(f"  Для постоянного решения: export CLOVER_NS={ns_label}")
+                except rospy.ROSException:
+                    log.error(f"[5/5] {svc} тоже не найден")
+                    self._set_error(
+                        f"get_telemetry не найден ни в /{ROS_NS} ни в {found_ns}.\n"
+                        "Используйте «Авто-настройка» для диагностики.")
+                    return
+            else:
+                n = len(info.get("services", [])) if (found_ns is None
+                        and info and info.get("ok")) else 0
+                log.error(f"[5/5] clover-сервисы отсутствуют ({n} других)")
+                log.error("rosmaster активен, но clover-узел на дроне НЕ ЗАПУЩЕН")
+                log.error("→ Используйте вкладку «Авто-настройка» → «Авто-настройка»")
+                log.error(f"→ Или: ssh pi@{host} 'sudo systemctl restart clover'")
+                self._set_error(
+                    f"get_telemetry не найден.\n"
+                    "Откройте вкладку «Авто-настройка» для автоматического исправления.")
+                return
 
         # ── Connect service proxies ───────────────────────────────────────
         try:
             self._svc_telem = rospy.ServiceProxy(
-                f"{ns}/get_telemetry", _clover_srv.GetTelemetry)
+                _svc_path(ns, "get_telemetry"), _clover_srv.GetTelemetry)
             self._svc_nav   = rospy.ServiceProxy(
-                f"{ns}/navigate", _clover_srv.Navigate)
+                _svc_path(ns, "navigate"), _clover_srv.Navigate)
             self._svc_vel   = rospy.ServiceProxy(
-                f"{ns}/set_velocity", _clover_srv.SetVelocity)
-            self._svc_land  = rospy.ServiceProxy(f"{ns}/land", _Trigger)
+                _svc_path(ns, "set_velocity"), _clover_srv.SetVelocity)
+            self._svc_land  = rospy.ServiceProxy(
+                _svc_path(ns, "land"), _Trigger)
         except Exception as e:
             log.error(f"ServiceProxy: {e}")
             self._set_error(str(e))

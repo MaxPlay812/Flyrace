@@ -265,7 +265,6 @@ class MainWindow(QMainWindow):
 
     def _open_connection_dialog(self):
         dlg = ConnectionDialog(self._controller, self)
-        dlg.reconnect_requested.connect(self._update_ros_button)
         dlg.exec_()
 
     # ---------------------------------------------------------------- theme
