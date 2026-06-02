@@ -95,18 +95,22 @@ class CloverController:
 
     # ------------------------------------------------------------------ setup
     def _init_ros(self):
+        import os
         from config import ROS_NS
+        master = os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311")
+        ros_ip = os.environ.get("ROS_IP", "(не задан)")
+        print(f"[Controller] ROS_MASTER_URI={master}  ROS_IP={ros_ip}")
         try:
             if not rospy.core.is_initialized():
                 rospy.init_node("clover_gui", anonymous=True, disable_signals=True)
             ns = f"/{ROS_NS}"
-            # Wait up to 3 s for telemetry service before declaring connected
+            print(f"[Controller] ожидание сервиса {ns}/get_telemetry ...")
             try:
-                rospy.wait_for_service(f"{ns}/get_telemetry", timeout=3.0)
+                rospy.wait_for_service(f"{ns}/get_telemetry", timeout=8.0)
             except rospy.ROSException:
                 raise ConnectionError(
-                    f"Сервис {ns}/get_telemetry недоступен.\n"
-                    "Проверьте: ROS_MASTER_URI, WiFi-соединение с дроном."
+                    f"Сервис {ns}/get_telemetry не отвечает за 8 с.\n"
+                    f"Проверьте: WiFi к дрону, ROS_MASTER_URI={master}, ROS_IP={ros_ip}"
                 )
             self._svc_telem = rospy.ServiceProxy(
                 f"{ns}/get_telemetry", _clover_srv.GetTelemetry)
@@ -115,9 +119,11 @@ class CloverController:
             self._svc_vel = rospy.ServiceProxy(
                 f"{ns}/set_velocity", _clover_srv.SetVelocity)
             self._svc_land = rospy.ServiceProxy(f"{ns}/land", _Trigger)
+            print("[Controller] ROS подключён успешно")
             threading.Thread(target=self._poll_ros, daemon=True).start()
         except Exception as exc:
             err = str(exc)
+            print(f"[Controller] ROS ошибка: {err}")
             with self._lock:
                 self._telemetry.connected = False
                 self._telemetry.error_msg = err

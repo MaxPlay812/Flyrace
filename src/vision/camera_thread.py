@@ -84,7 +84,10 @@ class CameraThread(threading.Thread):
     def run(self):
         if not _CV2_OK:
             return
-        self._cap = cv2.VideoCapture(self._source)
+        # On Linux prefer V4L2 to avoid GStreamer warnings
+        import sys
+        backend = cv2.CAP_V4L2 if sys.platform.startswith("linux") else cv2.CAP_ANY
+        self._cap = cv2.VideoCapture(self._source, backend)
         if not self._cap.isOpened():
             # Try test pattern if device unavailable
             self._run_test_pattern()
