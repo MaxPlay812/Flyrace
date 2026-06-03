@@ -59,6 +59,7 @@ class Telemetry:
     vz: float = 0.0
     yaw: float = 0.0
     battery: float = 100.0
+    voltage: float = 0.0
     armed: bool = False
     connected: bool = False
     mode: str = "SIM"
@@ -369,6 +370,7 @@ class CloverController:
                     self._telemetry.ros_state = RosState.FULL
                     self._telemetry.error_msg = ""
                     v = getattr(t, "voltage", 8.4)
+                    self._telemetry.voltage   = v
                     self._telemetry.battery   = min(100.0, v / 8.4 * 100.0)
                 if fail > 0:
                     success(f"Соединение восстановлено (после {fail} ошибок)")
@@ -415,7 +417,9 @@ class CloverController:
                     self._telemetry.connected = True
                     self._telemetry.mode      = "SIM"
                     self._telemetry.of_active = True
-                    self._telemetry.battery   = max(0.0, 100.0 - self._sim_t * 0.2)
+                    bat = max(0.0, 100.0 - self._sim_t * 0.2)
+                    self._telemetry.battery   = bat
+                    self._telemetry.voltage   = bat * 8.4 / 100.0
                 self._sim_t += dt * self._speed * 2.5
             self._notify()
             time.sleep(dt)

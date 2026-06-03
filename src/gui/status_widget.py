@@ -66,6 +66,7 @@ class StatusWidget(QWidget):
         self._bar_bat.setValue(100)
         self._bar_bat.setTextVisible(True)
         self._bar_bat.setFormat("%v%")
+        self._lbl_voltage = _colored_label("#fa8")
         g.addWidget(QLabel("Высота:"), 0, 0)
         g.addWidget(self._lbl_alt, 0, 1)
         g.addWidget(QLabel("Скорость:"), 1, 0)
@@ -74,6 +75,7 @@ class StatusWidget(QWidget):
         g.addWidget(self._lbl_pos, 2, 1)
         g.addWidget(QLabel("Батарея:"), 3, 0)
         g.addWidget(self._bar_bat, 3, 1)
+        g.addWidget(self._lbl_voltage, 3, 2)
         return gb
 
     def _race_group(self) -> QGroupBox:
@@ -117,6 +119,7 @@ class StatusWidget(QWidget):
                 "QProgressBar::chunk{background:#444}"
                 "QProgressBar{text-align:center;color:#888;}"
             )
+            self._lbl_voltage.setText("—")
         else:
             bat = int(t.battery)
             self._bar_bat.setValue(bat)
@@ -126,6 +129,7 @@ class StatusWidget(QWidget):
                 f"QProgressBar::chunk{{background:{color}}}"
                 "QProgressBar{text-align:center;}"
             )
+            self._lbl_voltage.setText(f"{t.voltage:.2f}В")
 
     def increment_lap(self):
         self._lap_count += 1

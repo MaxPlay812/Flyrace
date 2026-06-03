@@ -61,13 +61,27 @@ class CameraThread(threading.Thread):
     def _start_ros(self):
         try:
             import rospy
-            from sensor_msgs.msg import Image
+            from sensor_msgs.msg import Image, CompressedImage
             from cv_bridge import CvBridge
             self._bridge = CvBridge()
-            self._ros_sub = rospy.Subscriber(
-                self._source, Image, self._ros_cb, queue_size=1,
-                buff_size=2 ** 24, tcp_nodelay=True
-            )
+            # Prefer compressed topic to reduce WiFi bandwidth and latency
+            compressed = self._source + "/compressed"
+            try:
+                published = dict(rospy.get_published_topics())
+                use_compressed = compressed in published
+            except Exception:
+                use_compressed = False
+            if use_compressed:
+                self._ros_sub = rospy.Subscriber(
+                    compressed, CompressedImage, self._ros_cb_compressed,
+                    queue_size=1, buff_size=2 ** 22, tcp_nodelay=True
+                )
+                print(f"[Camera] compressed: {compressed}")
+            else:
+                self._ros_sub = rospy.Subscriber(
+                    self._source, Image, self._ros_cb, queue_size=1,
+                    buff_size=2 ** 24, tcp_nodelay=True
+                )
         except Exception as exc:
             print(f"[Camera] ROS subscribe failed ({exc}), falling back to OpenCV device 0")
             self._use_ros = False
@@ -78,6 +92,16 @@ class CameraThread(threading.Thread):
         try:
             frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
             self._push(frame)
+        except Exception:
+            pass
+
+    def _ros_cb_compressed(self, msg):
+        try:
+            nparr = np.frombuffer(msg.data, np.uint8)
+            import cv2 as _cv2
+            frame = _cv2.imdecode(nparr, _cv2.IMREAD_COLOR)
+            if frame is not None:
+                self._push(frame)
         except Exception:
             pass
 

@@ -7,8 +7,7 @@ from PyQt5.QtGui import (QBrush, QColor, QPainter, QPen,
                          QPainterPath, QPolygonF)
 from PyQt5.QtWidgets import QAction, QMenu, QWidget
 
-from config import (FIELD_H, FIELD_W, GAP_LEN, POLE_1, POLE_2,
-                    POLE_DIAMETER, TRACK_RADIUS)
+from config import (FIELD_H, FIELD_W, POLE_1, POLE_2, POLE_DIAMETER)
 from models.marker import ArucoMarker, ZoneType
 from utils.compat import mono_font, sans_font
 
@@ -121,7 +120,8 @@ class MapWidget(QWidget):
 
     def _paint_track(self, p: QPainter):
         s, _, _ = self._transform()
-        r = TRACK_RADIUS * s
+        # Visual radius = 60% of pole spacing → circles cross at centre, forming ∞
+        r = (POLE_2[0] - POLE_1[0]) * 0.6 * s
         dash_px = max(1.0, 300 * s)
         gap_px = max(1.0, 100 * s)
         line_w = max(1.0, 50 * s)
