@@ -9,6 +9,7 @@ Usage (any module):
 
 The GUI debug widget polls get_new_lines() via QTimer.
 """
+
 import logging
 import queue
 import threading
@@ -20,21 +21,24 @@ _history_lock = threading.Lock()
 _MAX_HISTORY = 2000
 
 _LEVEL_COLOR = {
-    "DEBUG":   "#888",
-    "INFO":    "#8cf",
+    "DEBUG": "#888",
+    "INFO": "#8cf",
     "WARNING": "#fa0",
-    "ERROR":   "#f55",
+    "ERROR": "#f55",
     "SUCCESS": "#6f6",
 }
 
 
 class _QueueHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
-        ts  = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         lvl = record.levelname
-        msg = self.format(record)
-        line = {"ts": ts, "level": lvl, "text": record.getMessage(),
-                "full": f"[{ts}] [{lvl:7s}] {record.getMessage()}"}
+        line = {
+            "ts": ts,
+            "level": lvl,
+            "text": record.getMessage(),
+            "full": f"[{ts}] [{lvl:7s}] {record.getMessage()}",
+        }
         with _history_lock:
             _history.append(line)
             if len(_history) > _MAX_HISTORY:
@@ -48,7 +52,7 @@ _handler.setFormatter(logging.Formatter("%(message)s"))
 log = logging.getLogger("clover_gui")
 log.setLevel(logging.DEBUG)
 log.addHandler(_handler)
-log.propagate = False   # don't double-print to root logger
+log.propagate = False  # don't double-print to root logger
 
 # convenience: success level
 logging.SUCCESS = 25

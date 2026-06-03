@@ -130,49 +130,51 @@ class MapWidget(QWidget):
 
         cx1, cy1 = float(POLE_1[0]), float(POLE_1[1])
         cx2, cy2 = float(POLE_2[0]), float(POLE_2[1])
-        d     = cx2 - cx1                       # pole separation mm
-        r_mm  = d * 0.6                         # 1200 mm → clear X crossing
+        d = cx2 - cx1  # pole separation mm
+        r_mm = d * 0.6  # 1200 mm → clear X crossing
         half_d = d * 0.5
-        h     = math.sqrt(r_mm ** 2 - half_d ** 2)   # ≈ 663 mm
-        ix    = (cx1 + cx2) / 2.0
+        h = math.sqrt(r_mm**2 - half_d**2)  # ≈ 663 mm
+        ix = (cx1 + cx2) / 2.0
         iy_top = cy1 + h
         iy_bot = cy1 - h
 
-        c1    = self._f2w(cx1, cy1)
-        c2    = self._f2w(cx2, cy2)
+        c1 = self._f2w(cx1, cy1)
+        c2 = self._f2w(cx2, cy2)
         i_top = self._f2w(ix, iy_top)
         i_bot = self._f2w(ix, iy_bot)
-        r_px  = r_mm * s
+        r_px = r_mm * s
 
         rect1 = QRectF(c1.x() - r_px, c1.y() - r_px, 2 * r_px, 2 * r_px)
         rect2 = QRectF(c2.x() - r_px, c2.y() - r_px, 2 * r_px, 2 * r_px)
 
         def qt_ang(center: QPointF, pt: QPointF) -> float:
-            return math.degrees(math.atan2(
-                -(pt.y() - center.y()),   # flip y: screen y grows downward
-                  pt.x() - center.x()
-            ))
+            return math.degrees(
+                math.atan2(
+                    -(pt.y() - center.y()),  # flip y: screen y grows downward
+                    pt.x() - center.x(),
+                )
+            )
 
-        a1t = qt_ang(c1, i_top)   # ≈ +33.5°  (P1→i_top)
-        a1b = qt_ang(c1, i_bot)   # ≈ -33.5°  (P1→i_bot)
-        a2t = qt_ang(c2, i_top)   # ≈ +146.5° (P2→i_top)
-        a2b = qt_ang(c2, i_bot)   # ≈ -146.5° (P2→i_bot)
+        a1t = qt_ang(c1, i_top)  # ≈ +33.5°  (P1→i_top)
+        a1b = qt_ang(c1, i_bot)  # ≈ -33.5°  (P1→i_bot)
+        a2t = qt_ang(c2, i_top)  # ≈ +146.5° (P2→i_top)
+        a2b = qt_ang(c2, i_bot)  # ≈ -146.5° (P2→i_bot)
 
         path = QPainterPath()
         path.moveTo(i_top)
         # 1. P1 major CCW: i_top → i_bot through LEFT  (~293°)
-        path.arcTo(rect1, a1t,  360.0 - (a1t - a1b))
+        path.arcTo(rect1, a1t, 360.0 - (a1t - a1b))
         # 2. P2 minor CW:  i_bot → i_top through centre-left (~67° CW)
         path.arcTo(rect2, a2b, -(((a2b - a2t) + 360.0) % 360.0))
         # 3. P2 major CW:  i_top → i_bot through RIGHT (~293° CW)
         path.arcTo(rect2, a2t, -(((a2t - a2b) + 360.0) % 360.0))
         # 4. P1 minor CCW: i_bot → i_top through centre-right (~67°)
-        path.arcTo(rect1, a1b,  a1t - a1b)
+        path.arcTo(rect1, a1b, a1t - a1b)
         path.closeSubpath()
 
         dash_px = max(1.0, 300 * s)
-        gap_px  = max(1.0, 100 * s)
-        line_w  = max(1.0,  50 * s)
+        gap_px = max(1.0, 100 * s)
+        line_w = max(1.0, 50 * s)
         pen = QPen(QColor(230, 220, 70, 200), line_w)
         pen.setDashPattern([dash_px / line_w, gap_px / line_w])
         pen.setCapStyle(Qt.FlatCap)

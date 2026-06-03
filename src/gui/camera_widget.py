@@ -5,14 +5,22 @@ from typing import List
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
-                              QSizePolicy, QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from vision.aruco_detector import ArucoDetector, DetectedMarker
 from utils.cuda import OpticalFlowTracker, bgr2rgb, cuda_available
 
 try:
     import cv2
+
     _CV2_OK = True
 except ImportError:
     _CV2_OK = False
@@ -25,9 +33,9 @@ class CameraWidget(QWidget):
     otherwise falls back to CPU. BGR→RGB conversion is also GPU-accelerated.
     """
 
-    markers_detected = pyqtSignal(list)   # list[DetectedMarker]
+    markers_detected = pyqtSignal(list)  # list[DetectedMarker]
     # Internal signal: delivers processed frame to main thread safely
-    _frame_ready = pyqtSignal(object)     # tuple(np.ndarray, list[DetectedMarker])
+    _frame_ready = pyqtSignal(object)  # tuple(np.ndarray, list[DetectedMarker])
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -36,9 +44,9 @@ class CameraWidget(QWidget):
         self._show_of = False
         self._show_lines = False
         self._of_tracker = OpticalFlowTracker()
-        self._pending = False   # True while a frame is queued in Qt event loop
+        self._pending = False  # True while a frame is queued in Qt event loop
         self._frame_ready.connect(self._on_frame_main)
-        self._source_change_cb = None   # set by main_window
+        self._source_change_cb = None  # set by main_window
         self._build_ui()
 
     # ---------------------------------------------------- layout
@@ -65,8 +73,14 @@ class CameraWidget(QWidget):
 
         # Camera source selector
         self._src_combo = QComboBox()
-        self._src_combo.addItems(["Webcam (0)", "Webcam (1)",
-                                  "Drone: /main_camera/image_raw", "Test pattern"])
+        self._src_combo.addItems(
+            [
+                "Webcam (0)",
+                "Webcam (1)",
+                "Drone: /main_camera/image_raw",
+                "Test pattern",
+            ]
+        )
         self._src_combo.setFixedWidth(200)
         self._src_combo.currentIndexChanged.connect(self._on_source_changed)
 
@@ -140,7 +154,7 @@ class CameraWidget(QWidget):
     # ---------------------------------------------------- private
     def _on_frame_main(self, data):
         """Runs on main thread (connected via Qt signal)."""
-        self._pending = False   # slot consumed — allow next frame
+        self._pending = False  # slot consumed — allow next frame
         frame, detected = data
         self._update_display(frame, detected)
 
@@ -149,8 +163,9 @@ class CameraWidget(QWidget):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
         edges = cv2.Canny(blur, 50, 150)
-        lines = cv2.HoughLinesP(edges, 1, math.pi / 180,
-                                threshold=40, minLineLength=30, maxLineGap=15)
+        lines = cv2.HoughLinesP(
+            edges, 1, math.pi / 180, threshold=40, minLineLength=30, maxLineGap=15
+        )
         out = frame.copy()
         if lines is not None:
             for seg in lines:
@@ -164,12 +179,10 @@ class CameraWidget(QWidget):
             return frame
         out = frame.copy()
         for (cx, cy), (ax, ay) in vectors:
-            cv2.arrowedLine(out, (cx, cy), (ax, ay),
-                            (0, 200, 255), 1, tipLength=0.3)
+            cv2.arrowedLine(out, (cx, cy), (ax, ay), (0, 200, 255), 1, tipLength=0.3)
         return out
 
-    def _update_display(self, frame: np.ndarray,
-                        detected: List[DetectedMarker]):
+    def _update_display(self, frame: np.ndarray, detected: List[DetectedMarker]):
         h, w = frame.shape[:2]
         # GPU-accelerated BGR→RGB when CUDA is available
         rgb = bgr2rgb(frame)
