@@ -110,13 +110,22 @@ class StatusWidget(QWidget):
         self._lbl_speed.setText(f"{speed:.2f} м/с")
         self._lbl_pos.setText(f"{t.x:.2f}, {t.y:.2f} м")
 
-        bat = int(t.battery)
-        self._bar_bat.setValue(bat)
-        color = "#4c4" if bat > 50 else "#f90" if bat > 20 else "#f44"
-        self._bar_bat.setStyleSheet(
-            f"QProgressBar::chunk{{background:{color}}}"
-            "QProgressBar{text-align:center;}"
-        )
+        if not t.connected:
+            self._bar_bat.setValue(0)
+            self._bar_bat.setFormat("—")
+            self._bar_bat.setStyleSheet(
+                "QProgressBar::chunk{background:#444}"
+                "QProgressBar{text-align:center;color:#888;}"
+            )
+        else:
+            bat = int(t.battery)
+            self._bar_bat.setValue(bat)
+            self._bar_bat.setFormat("%v%")
+            color = "#4c4" if bat > 50 else "#f90" if bat > 20 else "#f44"
+            self._bar_bat.setStyleSheet(
+                f"QProgressBar::chunk{{background:{color}}}"
+                "QProgressBar{text-align:center;}"
+            )
 
     def increment_lap(self):
         self._lap_count += 1

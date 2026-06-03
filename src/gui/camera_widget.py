@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 from typing import List, Optional
 
 import numpy as np
@@ -33,6 +34,7 @@ class CameraWidget(QWidget):
         self._detector = ArucoDetector()
         self._show_aruco = True
         self._show_of = False
+        self._show_lines = False
         self._of_tracker = OpticalFlowTracker()
         self._frame_ready.connect(self._on_frame_main)
         self._source_change_cb = None   # set by main_window
@@ -56,6 +58,10 @@ class CameraWidget(QWidget):
         gpu_badge = " (CUDA)" if cuda_available() else " (CPU)"
         self._chk_of.setText(f"Optical flow{gpu_badge}")
 
+        self._chk_lines = QCheckBox("Линии")
+        self._chk_lines.setChecked(False)
+        self._chk_lines.toggled.connect(lambda v: setattr(self, "_show_lines", v))
+
         # Camera source selector
         self._src_combo = QComboBox()
         self._src_combo.addItems(["Webcam (0)", "Webcam (1)",
@@ -65,6 +71,7 @@ class CameraWidget(QWidget):
 
         tb.addWidget(self._chk_aruco)
         tb.addWidget(self._chk_of)
+        tb.addWidget(self._chk_lines)
         tb.addWidget(self._src_combo)
         tb.addStretch()
         self._info_label = QLabel("Нет сигнала")
@@ -120,6 +127,8 @@ class CameraWidget(QWidget):
         if self._show_aruco and self._detector.available:
             detected = self._detector.detect(frame)
             frame = self._detector.draw_markers(frame, detected)
+        if self._show_lines:
+            frame = self._draw_line_detection(frame)
         if self._show_of:
             frame = self._draw_optical_flow(frame)
         if detected:
@@ -132,6 +141,20 @@ class CameraWidget(QWidget):
         """Runs on main thread (connected via Qt signal)."""
         frame, detected = data
         self._update_display(frame, detected)
+
+    def _draw_line_detection(self, frame: np.ndarray) -> np.ndarray:
+        """Canny + HoughLinesP overlay for track line detection."""
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blur, 50, 150)
+        lines = cv2.HoughLinesP(edges, 1, math.pi / 180,
+                                threshold=40, minLineLength=30, maxLineGap=15)
+        out = frame.copy()
+        if lines is not None:
+            for seg in lines:
+                x1, y1, x2, y2 = seg[0]
+                cv2.line(out, (x1, y1), (x2, y2), (0, 255, 128), 2)
+        return out
 
     def _draw_optical_flow(self, frame: np.ndarray) -> np.ndarray:
         vectors = self._of_tracker.track(frame)

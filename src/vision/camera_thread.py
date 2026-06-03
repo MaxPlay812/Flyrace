@@ -66,7 +66,7 @@ class CameraThread(threading.Thread):
             self._bridge = CvBridge()
             self._ros_sub = rospy.Subscriber(
                 self._source, Image, self._ros_cb, queue_size=1,
-                buff_size=2 ** 24
+                buff_size=2 ** 24, tcp_nodelay=True
             )
         except Exception as exc:
             print(f"[Camera] ROS subscribe failed ({exc}), falling back to OpenCV device 0")
@@ -93,13 +93,13 @@ class CameraThread(threading.Thread):
             # Try test pattern if device unavailable
             self._run_test_pattern()
             return
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # minimize capture buffer lag
         while self._running:
             ret, frame = self._cap.read()
             if not ret:
                 time.sleep(0.05)
                 continue
             self._push(frame)
-            time.sleep(1 / 30)
 
     def _run_test_pattern(self):
         """Generate a synthetic camera feed when no device is available."""
