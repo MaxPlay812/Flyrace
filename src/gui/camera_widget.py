@@ -5,7 +5,7 @@ from typing import List
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel, )
+from PyQt5.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
                               QSizePolicy, QVBoxLayout, QWidget)
 
 from vision.aruco_detector import ArucoDetector, DetectedMarker
