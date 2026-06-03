@@ -1,11 +1,11 @@
 from __future__ import annotations
 import math
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
+from PyQt5.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel, )
                               QSizePolicy, QVBoxLayout, QWidget)
 
 from vision.aruco_detector import ArucoDetector, DetectedMarker
@@ -36,6 +36,7 @@ class CameraWidget(QWidget):
         self._show_of = False
         self._show_lines = False
         self._of_tracker = OpticalFlowTracker()
+        self._pending = False   # True while a frame is queued in Qt event loop
         self._frame_ready.connect(self._on_frame_main)
         self._source_change_cb = None   # set by main_window
         self._build_ui()
@@ -121,8 +122,9 @@ class CameraWidget(QWidget):
 
     def on_frame(self, frame: np.ndarray):
         """Called from camera thread — do CV work here, then signal main thread."""
-        if not _CV2_OK:
-            return
+        if self._pending or not _CV2_OK:
+            return  # drop: previous frame still waiting in Qt queue
+        self._pending = True
         detected: List[DetectedMarker] = []
         if self._show_aruco and self._detector.available:
             detected = self._detector.detect(frame)
@@ -133,12 +135,12 @@ class CameraWidget(QWidget):
             frame = self._draw_optical_flow(frame)
         if detected:
             self.markers_detected.emit(detected)
-        # Signal crosses thread boundary safely
         self._frame_ready.emit((frame, detected))
 
     # ---------------------------------------------------- private
     def _on_frame_main(self, data):
         """Runs on main thread (connected via Qt signal)."""
+        self._pending = False   # slot consumed — allow next frame
         frame, detected = data
         self._update_display(frame, detected)
 
@@ -173,7 +175,7 @@ class CameraWidget(QWidget):
         rgb = bgr2rgb(frame)
         qi = QImage(rgb.data, w, h, w * 3, QImage.Format_RGB888)
         px = QPixmap.fromImage(qi).scaled(
-            self._video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+            self._video_label.size(), Qt.KeepAspectRatio, Qt.FastTransformation
         )
         self._video_label.setPixmap(px)
         self._info_label.setText(f"{w}×{h}  [{self._of_tracker.backend}]")
