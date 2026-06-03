@@ -3,20 +3,19 @@ import math
 from typing import List, Optional
 
 from PyQt5.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt5.QtGui import (QBrush, QColor, QPainter, QPen,
-                         QPainterPath, QPolygonF)
+from PyQt5.QtGui import QBrush, QColor, QPainter, QPen
 from PyQt5.QtWidgets import QAction, QMenu, QWidget
 
-from config import (FIELD_H, FIELD_W, POLE_1, POLE_2, POLE_DIAMETER)
+from config import FIELD_H, FIELD_W, POLE_1, POLE_2, POLE_DIAMETER
 from models.marker import ArucoMarker, ZoneType
 from utils.compat import mono_font, sans_font
 
 _ZONE_COLOR = {
-    ZoneType.NORMAL:     QColor(80,  130, 255, 200),
-    ZoneType.ACCELERATE: QColor(50,  220,  50, 210),
-    ZoneType.DECELERATE: QColor(240,  60,  60, 210),
-    ZoneType.WAYPOINT:   QColor(240, 190,  40, 210),
-    ZoneType.START:      QColor(190,  50, 200, 210),
+    ZoneType.NORMAL: QColor(80, 130, 255, 200),
+    ZoneType.ACCELERATE: QColor(50, 220, 50, 210),
+    ZoneType.DECELERATE: QColor(240, 60, 60, 210),
+    ZoneType.WAYPOINT: QColor(240, 190, 40, 210),
+    ZoneType.START: QColor(190, 50, 200, 210),
 }
 _MARGIN = 24
 
@@ -24,14 +23,14 @@ _MARGIN = 24
 class MapWidget(QWidget):
     """Top-down 2-D field map with drone position and ArUco markers."""
 
-    marker_add_requested = pyqtSignal(float, float)   # field x, y [mm]
-    marker_selected = pyqtSignal(int)                  # marker_id
+    marker_add_requested = pyqtSignal(float, float)  # field x, y [mm]
+    marker_selected = pyqtSignal(int)  # marker_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(420, 320)
         self._markers: List[ArucoMarker] = []
-        self._drone_x: Optional[float] = None   # mm
+        self._drone_x: Optional[float] = None  # mm
         self._drone_y: Optional[float] = None
         self._drone_yaw: float = 0.0
         self._selected_id: Optional[int] = None
@@ -120,17 +119,23 @@ class MapWidget(QWidget):
 
     def _paint_track(self, p: QPainter):
         s, _, _ = self._transform()
-        # Visual radius = 60% of pole spacing → circles cross at centre, forming ∞
-        r = (POLE_2[0] - POLE_1[0]) * 0.6 * s
+        # 55% of pole spacing → circles just cross at centre (≈10% overlap), matching regulations.
+        # Clip to field so the tiny overflow is hidden cleanly.
+        r = (POLE_2[0] - POLE_1[0]) * 0.55 * s
         dash_px = max(1.0, 300 * s)
         gap_px = max(1.0, 100 * s)
         line_w = max(1.0, 50 * s)
         pen = QPen(QColor(230, 220, 70, 200), line_w)
         pen.setDashPattern([dash_px / line_w, gap_px / line_w])
         p.setPen(pen)
+        tl = self._f2w(0, FIELD_H)
+        br = self._f2w(FIELD_W, 0)
+        p.save()
+        p.setClipRect(QRectF(tl, br))
         for px, py in (POLE_1, POLE_2):
             c = self._f2w(px, py)
             p.drawEllipse(c, r, r)
+        p.restore()
 
     def _paint_poles(self, p: QPainter):
         s, _, _ = self._transform()
@@ -167,8 +172,10 @@ class MapWidget(QWidget):
             p.setBrush(QBrush(color))
             p.drawRect(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r))
             p.setPen(QPen(Qt.white, 1))
-            p.drawText(c + QPointF(-r + 2, r - 3),
-                       f"#{m.marker_id}" + (f" {m.label}" if m.label else ""))
+            p.drawText(
+                c + QPointF(-r + 2, r - 3),
+                f"#{m.marker_id}" + (f" {m.label}" if m.label else ""),
+            )
             p.setPen(QPen(QColor(200, 200, 100), 1))
             p.drawText(c + QPointF(-r + 2, r + 12), m.zone_type.label())
 
