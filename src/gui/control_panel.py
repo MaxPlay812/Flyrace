@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
 )
 
 from config import DEFAULT_SPEED, FLIGHT_ALT, MAX_SPEED, MIN_SPEED
+from gui import theme
 
 
 class ControlPanel(QWidget):
@@ -50,21 +51,17 @@ class ControlPanel(QWidget):
         lay.setSpacing(6)
 
         self._btn_takeoff = QPushButton("Взлёт")
-        self._btn_takeoff.setMinimumHeight(36)
+        self._btn_takeoff.setMinimumHeight(38)
         self._btn_takeoff.setStyleSheet(
-            "QPushButton{background:#1e6e2e;color:white;font-weight:bold;border-radius:4px}"
-            "QPushButton:hover{background:#2a9a40}"
-            "QPushButton:disabled{background:#333}"
+            f"QPushButton{{background:{theme.SUCCESS};color:#06241a;font-weight:700;"
+            "border:none;border-radius:8px}"
+            "QPushButton:hover{background:#4ade9f}"
+            f"QPushButton:disabled{{background:{theme.SURFACE};color:#5b626c}}"
         )
         self._btn_takeoff.clicked.connect(self._on_takeoff)
 
         self._btn_land = QPushButton("Посадка")
-        self._btn_land.setMinimumHeight(36)
-        self._btn_land.setStyleSheet(
-            "QPushButton{background:#4a3800;color:white;font-weight:bold;border-radius:4px}"
-            "QPushButton:hover{background:#6a5000}"
-            "QPushButton:disabled{background:#333}"
-        )
+        self._btn_land.setMinimumHeight(38)
         self._btn_land.setEnabled(False)
         self._btn_land.clicked.connect(self._on_land)
 
@@ -115,21 +112,12 @@ class ControlPanel(QWidget):
 
         self._btn_start_mission = QPushButton("Запустить миссию")
         self._btn_start_mission.setMinimumHeight(34)
-        self._btn_start_mission.setStyleSheet(
-            "QPushButton{background:#1a4a7a;color:white;font-weight:bold;border-radius:4px}"
-            "QPushButton:hover{background:#2060a0}"
-            "QPushButton:disabled{background:#333}"
-        )
+        self._btn_start_mission.setProperty("role", "primary")
         self._btn_start_mission.setEnabled(False)
         self._btn_start_mission.clicked.connect(self._on_start_mission)
 
         self._btn_stop_mission = QPushButton("Остановить миссию")
         self._btn_stop_mission.setMinimumHeight(34)
-        self._btn_stop_mission.setStyleSheet(
-            "QPushButton{background:#4a2020;color:white;border-radius:4px}"
-            "QPushButton:hover{background:#6a3030}"
-            "QPushButton:disabled{background:#333}"
-        )
         self._btn_stop_mission.setEnabled(False)
         self._btn_stop_mission.clicked.connect(self._on_stop_mission)
 
@@ -139,12 +127,8 @@ class ControlPanel(QWidget):
 
     def _build_stop_btn(self) -> QPushButton:
         btn = QPushButton("⛔  АВАРИЙНАЯ ОСТАНОВКА")
-        btn.setMinimumHeight(44)
-        btn.setStyleSheet(
-            "QPushButton{background:#8b0000;color:white;font-weight:bold;"
-            "font-size:13px;border-radius:4px}"
-            "QPushButton:hover{background:#cc0000}"
-        )
+        btn.setMinimumHeight(46)
+        btn.setProperty("role", "danger")
         btn.clicked.connect(self.stop_requested)
         return btn
 

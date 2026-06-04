@@ -3,26 +3,28 @@ from typing import List
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSlot
 from PyQt5.QtWidgets import (
-    QAction,
+    QButtonGroup,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QStatusBar,
     QTabWidget,
-    QToolBar,
+    QVBoxLayout,
     QWidget,
-    QLabel,
-    QSizePolicy,
 )
 
-from config import APP_TITLE, APP_VERSION, MARKERS_FILE, CAMERA_TOPIC
-from drone.controller import CloverController
+from config import APP_VERSION, MARKERS_FILE, CAMERA_TOPIC
+from drone.controller import CloverController, RosState
 from models.marker import ArucoMarker, load_markers, save_markers
 from vision.camera_thread import CameraThread
 from vision.aruco_detector import DetectedMarker
 from utils.cuda import cuda_available
 
-from drone.controller import RosState
+from gui import theme
 from gui.control_panel import ControlPanel
 from gui.camera_widget import CameraWidget
 from gui.map_widget import MapWidget
@@ -31,13 +33,15 @@ from gui.marker_dialog import MarkerManagerWidget
 from gui.connection_dialog import ConnectionDialog
 from gui.debug_widget import DebugWidget
 
+_RACE, _SETUP = 0, 1
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(APP_TITLE)
-        self.resize(1280, 800)
-        self.setMinimumSize(900, 600)
+        self.setWindowTitle("Clover 4 · Воздушные гонки")
+        self.resize(1320, 820)
+        self.setMinimumSize(960, 620)
 
         self._controller = CloverController()
         self._camera = CameraThread(source=0)
@@ -49,6 +53,7 @@ class MainWindow(QMainWindow):
         self._camera_w = CameraWidget()
         self._map_w = MapWidget()
         self._marker_mgr = MarkerManagerWidget()
+        self._debug_w = DebugWidget()
 
         self._build_ui()
         self._connect_signals()
@@ -57,90 +62,153 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- build
     def _build_ui(self):
-        self._toolbar = self._build_toolbar()
-        self.addToolBar(self._toolbar)
-
-        # Root splitter: [left panel | right area]
-        root_split = QSplitter(Qt.Horizontal)
-
-        # Left: controls + status
-        left_split = QSplitter(Qt.Vertical)
-        left_split.addWidget(self._ctrl)
-        left_split.addWidget(self._status)
-        left_split.setSizes([350, 350])
-        left_split.setFixedWidth(250)
-
-        # Right: tabs (camera, map, markers)
-        self._tabs = QTabWidget()
+        self.setStyleSheet(theme.STYLESHEET)
         self._map_w.set_markers(self._markers)
         self._marker_mgr.set_markers(self._markers)
-        self._tabs.addTab(self._camera_w, "Камера")
-        self._tabs.addTab(self._map_w, "Карта поля")
-        self._tabs.addTab(self._marker_mgr, "ArUco маркеры")
-        self._tabs.addTab(DebugWidget(), "Лог ROS")
 
-        root_split.addWidget(left_split)
-        root_split.addWidget(self._tabs)
-        root_split.setSizes([250, 1030])
-        root_split.setStretchFactor(1, 1)
-
-        self.setCentralWidget(root_split)
-        self._set_dark_theme()
+        root = QWidget()
+        outer = QVBoxLayout(root)
+        outer.setContentsMargins(10, 8, 10, 8)
+        outer.setSpacing(8)
+        outer.addWidget(self._build_header())
+        outer.addWidget(self._build_body(), 1)
+        self.setCentralWidget(root)
 
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
-        gpu = "GPU: CUDA" if cuda_available() else "GPU: нет"
-        self._status_bar.showMessage(f"Clover 4 GUI готов  |  {gpu}")
+        gpu = "GPU: CUDA" if cuda_available() else "GPU: CPU"
+        self._status_bar.showMessage(f"Готов  ·  {gpu}")
 
-    def _build_toolbar(self) -> QToolBar:
-        tb = QToolBar("Основная")
-        tb.setMovable(False)
-
-        # ROS connection status button
-        self._btn_ros = QPushButton()
-        self._btn_ros.setFlat(True)
-        self._btn_ros.setFixedWidth(160)
-        self._btn_ros.clicked.connect(self._open_connection_dialog)
-        self._update_ros_button()
-        tb.addWidget(self._btn_ros)
-
-        tb.addSeparator()
-
-        self._act_add_marker = QAction("Добавить маркер", self)
-        self._act_add_marker.setCheckable(True)
-        self._act_add_marker.setToolTip(
-            "Включить режим добавления: кликните на карте для размещения маркера"
+    def _build_header(self) -> QWidget:
+        bar = QFrame()
+        bar.setStyleSheet(
+            f"QFrame{{background:{theme.SURFACE};border:1px solid {theme.BORDER};"
+            "border-radius:10px;}"
         )
-        self._act_add_marker.toggled.connect(self._on_add_marker_mode)
-        tb.addAction(self._act_add_marker)
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(14, 8, 12, 8)
+        lay.setSpacing(12)
 
-        tb.addSeparator()
+        title = QLabel("CLOVER&nbsp;4")
+        title.setStyleSheet(
+            f"color:{theme.ACCENT};font-size:16px;font-weight:800;letter-spacing:1px;"
+        )
+        subtitle = QLabel("Воздушные гонки")
+        subtitle.setStyleSheet(f"color:{theme.TEXT_DIM};font-size:12px;")
+        lay.addWidget(title)
+        lay.addWidget(subtitle)
+        lay.addSpacing(18)
 
-        act_lap = QAction("Круг +1", self)
-        act_lap.triggered.connect(lambda: self._status.increment_lap())
-        tb.addAction(act_lap)
+        # Mode switch (Гонка / Настройка)
+        self._mode_group = QButtonGroup(self)
+        self._mode_group.setExclusive(True)
+        for idx, name in ((_RACE, "Гонка"), (_SETUP, "Настройка")):
+            btn = QPushButton(name)
+            btn.setProperty("role", "mode")
+            btn.setCheckable(True)
+            btn.setChecked(idx == _RACE)
+            btn.clicked.connect(lambda _=False, i=idx: self._set_mode(i))
+            self._mode_group.addButton(btn, idx)
+            lay.addWidget(btn)
 
-        act_restart = QAction("Рестарт +1", self)
-        act_restart.triggered.connect(lambda: self._status.increment_restart())
-        tb.addAction(act_restart)
+        lay.addStretch(1)
 
-        act_reset = QAction("Сброс гонки", self)
-        act_reset.triggered.connect(lambda: self._status.reset_race())
-        tb.addAction(act_reset)
+        # Connection pill, battery pill, version
+        self._btn_ros = QPushButton()
+        self._btn_ros.setCursor(Qt.PointingHandCursor)
+        self._btn_ros.clicked.connect(self._open_connection_dialog)
+        lay.addWidget(self._btn_ros)
 
-        # Right-align version label
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        tb.addWidget(spacer)
-        ver_lbl = QLabel(f"v{APP_VERSION}")
-        ver_lbl.setStyleSheet("color:#555; font-size:11px; padding-right:8px;")
-        tb.addWidget(ver_lbl)
+        self._lbl_batt = QLabel("—")
+        self._lbl_batt.setMinimumWidth(86)
+        self._lbl_batt.setAlignment(Qt.AlignCenter)
+        lay.addWidget(self._lbl_batt)
 
-        return tb
+        ver = QLabel(f"v{APP_VERSION}")
+        ver.setStyleSheet(f"color:{theme.TEXT_DIM};font-size:11px;")
+        lay.addWidget(ver)
+
+        self._update_ros_button()
+        self._update_battery_pill(None)
+        return bar
+
+    def _build_body(self) -> QWidget:
+        split = QSplitter(Qt.Horizontal)
+
+        left = QSplitter(Qt.Vertical)
+        left.addWidget(self._ctrl)
+        left.addWidget(self._status)
+        left.setSizes([420, 320])
+        left.setFixedWidth(260)
+        split.addWidget(left)
+
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._build_race_page())
+        self._stack.addWidget(self._build_setup_page())
+        split.addWidget(self._stack)
+        split.setStretchFactor(1, 1)
+        return split
+
+    def _build_race_page(self) -> QWidget:
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        for text, slot in (
+            ("Круг +1", lambda: self._status.increment_lap()),
+            ("Рестарт +1", lambda: self._status.increment_restart()),
+            ("Сброс гонки", lambda: self._status.reset_race()),
+        ):
+            b = QPushButton(text)
+            b.clicked.connect(slot)
+            row.addWidget(b)
+        row.addStretch(1)
+        self._btn_add_marker = QPushButton("+ Маркер")
+        self._btn_add_marker.setCheckable(True)
+        self._btn_add_marker.setProperty("role", "primary")
+        self._btn_add_marker.toggled.connect(self._on_add_marker_mode)
+        row.addWidget(self._btn_add_marker)
+        v.addLayout(row)
+
+        self._race_tabs = QTabWidget()
+        self._race_tabs.addTab(self._camera_w, "Камера")
+        self._race_tabs.addTab(self._map_w, "Карта поля")
+        v.addWidget(self._race_tabs, 1)
+        return page
+
+    def _build_setup_page(self) -> QWidget:
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        btn_conn = QPushButton("Подключение к дрону…")
+        btn_conn.setProperty("role", "primary")
+        btn_conn.clicked.connect(self._open_connection_dialog)
+        row.addWidget(btn_conn)
+        btn_reset_field = QPushButton("Сбросить поле к регламенту")
+        btn_reset_field.clicked.connect(self._map_w.reset_field)
+        row.addWidget(btn_reset_field)
+        row.addStretch(1)
+        v.addLayout(row)
+
+        self._setup_tabs = QTabWidget()
+        self._setup_tabs.addTab(self._marker_mgr, "ArUco маркеры")
+        self._setup_tabs.addTab(self._debug_w, "Лог ROS")
+        v.addWidget(self._setup_tabs, 1)
+        return page
+
+    def _set_mode(self, index: int):
+        self._stack.setCurrentIndex(index)
+        self._status_bar.showMessage("Режим гонки" if index == _RACE else "Настройка")
 
     # ---------------------------------------------------------------- connect
     def _connect_signals(self):
-        # Control panel → controller
         self._ctrl.takeoff_requested.connect(self._on_takeoff)
         self._ctrl.land_requested.connect(self._on_land)
         self._ctrl.stop_requested.connect(self._on_emergency)
@@ -148,20 +216,15 @@ class MainWindow(QMainWindow):
         self._ctrl.start_mission.connect(self._on_start_mission)
         self._ctrl.stop_mission.connect(self._on_stop_mission)
 
-        # Camera → camera widget
         self._camera.add_frame_callback(self._camera_w.on_frame)
         self._camera_w.set_source_change_callback(self._switch_camera)
-
-        # Camera widget → map (marker detection)
         self._camera_w.markers_detected.connect(self._on_markers_detected)
 
-        # Map → add marker
         self._map_w.marker_add_requested.connect(self._on_map_add_marker)
         self._map_w.marker_selected.connect(self._on_map_marker_selected)
         self._map_w.field_changed.connect(self._controller.reload_field)
         self._map_w.markers_edited.connect(self._on_markers_dragged)
 
-        # Marker manager → refresh map
         self._marker_mgr.markers_changed.connect(self._on_markers_updated)
 
     def _setup_telemetry_timer(self):
@@ -202,7 +265,8 @@ class MainWindow(QMainWindow):
     def _on_add_marker_mode(self, enabled: bool):
         self._map_w.set_add_mode(enabled)
         if enabled:
-            self._tabs.setCurrentWidget(self._map_w)
+            self._set_mode(_RACE)
+            self._race_tabs.setCurrentWidget(self._map_w)
             self._status_bar.showMessage(
                 "Режим добавления: кликните на карте для размещения маркера"
             )
@@ -212,11 +276,12 @@ class MainWindow(QMainWindow):
     @pyqtSlot(float, float)
     def _on_map_add_marker(self, x: float, y: float):
         self._marker_mgr.add_marker_at(x, y)
-        self._act_add_marker.setChecked(False)
+        self._btn_add_marker.setChecked(False)
 
     @pyqtSlot(int)
     def _on_map_marker_selected(self, marker_id: int):
-        self._tabs.setCurrentWidget(self._marker_mgr)
+        self._set_mode(_SETUP)
+        self._setup_tabs.setCurrentWidget(self._marker_mgr)
         self._status_bar.showMessage(f"Выбран маркер #{marker_id}")
 
     @pyqtSlot(list)
@@ -255,7 +320,7 @@ class MainWindow(QMainWindow):
         if t.connected and t.armed:
             self._map_w.set_drone_position(t.x, t.y, t.yaw)
         self._update_ros_button()
-        # Auto-switch camera to drone ROS topic on first successful connection
+        self._update_battery_pill(t)
         if t.connected and not self._ros_cam_switched:
             self._ros_cam_switched = True
             self._switch_camera(CAMERA_TOPIC)
@@ -265,7 +330,6 @@ class MainWindow(QMainWindow):
         if source is None:
             source = "test"  # CameraThread will use test pattern for unknown str
         self._camera.stop()
-        # Use 0 for "test" fallback path — device 0 falls through to test pattern
         actual = source if source != "test" else 99
         self._camera = CameraThread(source=actual)
         self._camera.add_frame_callback(self._camera_w.on_frame)
@@ -274,76 +338,43 @@ class MainWindow(QMainWindow):
         self._camera_w.set_source_label(label)
         self._status_bar.showMessage(f"Камера: {label}")
 
-    # ----------------------------------------------- ROS connection UI
+    # ----------------------------------------------- header indicators
+    def _pill_css(self, fg: str, border: str) -> str:
+        return (
+            f"color:{fg};font-weight:700;font-size:12px;"
+            f"border:1px solid {border};border-radius:12px;padding:4px 12px;"
+        )
+
     def _update_ros_button(self):
         state = self._controller.ros_state
         if state == RosState.FULL:
-            t = self._controller.get_telemetry()
-            if t.connected:
-                self._btn_ros.setText("ROS: подключён")
-                self._btn_ros.setStyleSheet(
-                    "color:#6f6; font-weight:bold; border:1px solid #3a3; "
-                    "border-radius:3px; padding:2px 6px;"
-                )
+            connected = self._controller.get_telemetry().connected
+            if connected:
+                self._btn_ros.setText("● ROS подключён")
+                self._btn_ros.setStyleSheet(self._pill_css(theme.SUCCESS, "#2c7a5b"))
             else:
-                self._btn_ros.setText("ROS: нет ответа")
-                self._btn_ros.setStyleSheet(
-                    "color:#fa0; font-weight:bold; border:1px solid #a70; "
-                    "border-radius:3px; padding:2px 6px;"
-                )
+                self._btn_ros.setText("● ROS нет ответа")
+                self._btn_ros.setStyleSheet(self._pill_css(theme.WARNING, "#8a6d1f"))
         elif state == RosState.ROSPY:
-            self._btn_ros.setText("ROS: нет пакета clover")
-            self._btn_ros.setStyleSheet(
-                "color:#f66; font-weight:bold; border:1px solid #833; "
-                "border-radius:3px; padding:2px 6px;"
-            )
+            self._btn_ros.setText("● нет пакета clover")
+            self._btn_ros.setStyleSheet(self._pill_css(theme.DANGER, "#7a2c2c"))
         else:
-            self._btn_ros.setText("ROS: симуляция")
-            self._btn_ros.setStyleSheet(
-                "color:#888; border:1px solid #555; border-radius:3px; padding:2px 6px;"
-            )
+            self._btn_ros.setText("● Симуляция")
+            self._btn_ros.setStyleSheet(self._pill_css(theme.TEXT_DIM, theme.BORDER))
+
+    def _update_battery_pill(self, t):
+        if t is None or not t.connected:
+            self._lbl_batt.setText("🔋 —")
+            self._lbl_batt.setStyleSheet(self._pill_css(theme.TEXT_DIM, theme.BORDER))
+            return
+        pct = int(t.battery)
+        color = theme.battery_color(pct)
+        self._lbl_batt.setText(f"🔋 {pct}% · {t.voltage:.1f}В")
+        self._lbl_batt.setStyleSheet(self._pill_css(color, theme.BORDER))
 
     def _open_connection_dialog(self):
         dlg = ConnectionDialog(self._controller, self)
         dlg.exec_()
-
-    # ---------------------------------------------------------------- theme
-    def _set_dark_theme(self):
-        self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background: #1a1a1a; color: #ddd;
-            }
-            QGroupBox {
-                border: 1px solid #444; border-radius: 4px;
-                margin-top: 6px; padding-top: 4px;
-                font-weight: bold;
-            }
-            QGroupBox::title { subcontrol-origin: margin; left: 8px; }
-            QTabWidget::pane { border: 1px solid #444; }
-            QTabBar::tab {
-                background: #2a2a2a; color: #bbb; padding: 6px 16px;
-                border: 1px solid #444; border-bottom: none;
-            }
-            QTabBar::tab:selected { background: #1a1a1a; color: white; }
-            QSlider::groove:horizontal {
-                height: 6px; background: #333; border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
-                width: 14px; height: 14px; border-radius: 7px;
-                background: #5080c0; margin: -4px 0;
-            }
-            QProgressBar {
-                border: 1px solid #555; border-radius: 3px; height: 14px;
-                text-align: center; font-size: 11px;
-            }
-            QToolBar { background: #222; border-bottom: 1px solid #444; spacing: 4px; }
-            QStatusBar { background: #181818; color: #999; font-size: 11px; }
-            QListWidget { background: #1e1e1e; alternate-background-color: #232323; }
-            QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
-                background: #2a2a2a; border: 1px solid #555; border-radius: 3px;
-                padding: 2px 4px;
-            }
-        """)
 
     # ---------------------------------------------------------------- close
     def closeEvent(self, event):
