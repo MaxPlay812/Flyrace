@@ -3,8 +3,14 @@ __pycache__/
 *.pyo
 .DS_Store
 markers.json
+field.json
+.claude/
+graphify-out/
 .claude-flow/
 *.egg-info/
 dist/
 build/
 .env
+.venv/
+venv/
+.pytest_cache/

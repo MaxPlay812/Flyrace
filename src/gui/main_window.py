@@ -2,9 +2,18 @@ from __future__ import annotations
 from typing import List
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSlot
-from PyQt5.QtWidgets import (QAction, QMainWindow, QPushButton, QSplitter,
-                              QStatusBar, QTabWidget, QToolBar, QWidget,
-                              QVBoxLayout, QCheckBox, QLabel, QSizePolicy)
+from PyQt5.QtWidgets import (
+    QAction,
+    QMainWindow,
+    QPushButton,
+    QSplitter,
+    QStatusBar,
+    QTabWidget,
+    QToolBar,
+    QWidget,
+    QLabel,
+    QSizePolicy,
+)
 
 from config import APP_TITLE, APP_VERSION, MARKERS_FILE, CAMERA_TOPIC
 from drone.controller import CloverController
@@ -33,7 +42,7 @@ class MainWindow(QMainWindow):
         self._controller = CloverController()
         self._camera = CameraThread(source=0)
         self._markers: List[ArucoMarker] = load_markers(MARKERS_FILE)
-        self._ros_cam_switched = False   # switch to drone cam once on first connect
+        self._ros_cam_switched = False  # switch to drone cam once on first connect
 
         self._ctrl = ControlPanel()
         self._status = StatusWidget()
@@ -149,6 +158,7 @@ class MainWindow(QMainWindow):
         # Map → add marker
         self._map_w.marker_add_requested.connect(self._on_map_add_marker)
         self._map_w.marker_selected.connect(self._on_map_marker_selected)
+        self._map_w.field_changed.connect(self._controller.reload_field)
 
         # Marker manager → refresh map
         self._marker_mgr.markers_changed.connect(self._on_markers_updated)
@@ -216,8 +226,9 @@ class MainWindow(QMainWindow):
     @pyqtSlot(list)
     def _on_markers_detected(self, detected: List[DetectedMarker]):
         for dm in detected:
-            known = next((m for m in self._markers
-                          if m.marker_id == dm.marker_id), None)
+            known = next(
+                (m for m in self._markers if m.marker_id == dm.marker_id), None
+            )
             if known:
                 self._apply_zone(known)
 
@@ -264,22 +275,25 @@ class MainWindow(QMainWindow):
                 self._btn_ros.setText("ROS: подключён")
                 self._btn_ros.setStyleSheet(
                     "color:#6f6; font-weight:bold; border:1px solid #3a3; "
-                    "border-radius:3px; padding:2px 6px;")
+                    "border-radius:3px; padding:2px 6px;"
+                )
             else:
                 self._btn_ros.setText("ROS: нет ответа")
                 self._btn_ros.setStyleSheet(
                     "color:#fa0; font-weight:bold; border:1px solid #a70; "
-                    "border-radius:3px; padding:2px 6px;")
+                    "border-radius:3px; padding:2px 6px;"
+                )
         elif state == RosState.ROSPY:
             self._btn_ros.setText("ROS: нет пакета clover")
             self._btn_ros.setStyleSheet(
                 "color:#f66; font-weight:bold; border:1px solid #833; "
-                "border-radius:3px; padding:2px 6px;")
+                "border-radius:3px; padding:2px 6px;"
+            )
         else:
             self._btn_ros.setText("ROS: симуляция")
             self._btn_ros.setStyleSheet(
-                "color:#888; border:1px solid #555; "
-                "border-radius:3px; padding:2px 6px;")
+                "color:#888; border:1px solid #555; border-radius:3px; padding:2px 6px;"
+            )
 
     def _open_connection_dialog(self):
         dlg = ConnectionDialog(self._controller, self)

@@ -1,10 +1,17 @@
 """Live debug log viewer widget."""
+
 from __future__ import annotations
 
 from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QTextCursor
-from PyQt5.QtWidgets import (QCheckBox, QHBoxLayout, QPlainTextEdit,
-                              QPushButton, QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (
+    QCheckBox,
+    QHBoxLayout,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from utils.debug_log import get_new_lines, get_history, get_level_color
 
@@ -48,7 +55,8 @@ class DebugWidget(QWidget):
         self._text.setReadOnly(True)
         self._text.setStyleSheet(
             f"background:#0d0d0d; color:#ccc; {_MONO} font-size:11px;"
-            "border:1px solid #333;")
+            "border:1px solid #333;"
+        )
         self._text.setMaximumBlockCount(3000)
         lay.addWidget(self._text, 1)
 
@@ -68,7 +76,7 @@ class DebugWidget(QWidget):
         color = get_level_color(line["level"])
         self._text.appendHtml(
             f'<span style="color:{color}; {_MONO} font-size:11px;">'
-            f'{_esc(line["full"])}</span>'
+            f"{_esc(line['full'])}</span>"
         )
         if self._chk_scroll.isChecked():
             self._text.moveCursor(QTextCursor.End)

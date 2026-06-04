@@ -2,8 +2,14 @@ from __future__ import annotations
 import time
 
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import (QGridLayout, QGroupBox, QLabel,
-                              QProgressBar, QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (
+    QGridLayout,
+    QGroupBox,
+    QLabel,
+    QProgressBar,
+    QVBoxLayout,
+    QWidget,
+)
 
 from drone.controller import Telemetry
 from utils.compat import MONO_CSS
@@ -98,15 +104,19 @@ class StatusWidget(QWidget):
     def update_telemetry(self, t: Telemetry):
         if t.connected:
             self._lbl_conn.setText("Подключён")
-            self._lbl_conn.setStyleSheet("color:#8f8;font-family:Menlo,Consolas,'DejaVu Sans Mono','Courier New',monospace;font-size:12px")
+            self._lbl_conn.setStyleSheet(
+                "color:#8f8;font-family:Menlo,Consolas,'DejaVu Sans Mono','Courier New',monospace;font-size:12px"
+            )
         else:
             self._lbl_conn.setText("Нет связи")
-            self._lbl_conn.setStyleSheet("color:#f88;font-family:Menlo,Consolas,'DejaVu Sans Mono','Courier New',monospace;font-size:12px")
+            self._lbl_conn.setStyleSheet(
+                "color:#f88;font-family:Menlo,Consolas,'DejaVu Sans Mono','Courier New',monospace;font-size:12px"
+            )
 
         self._lbl_mode.setText(t.mode)
         self._lbl_of.setText("Активен" if t.of_active else "—")
 
-        speed = (t.vx ** 2 + t.vy ** 2) ** 0.5
+        speed = (t.vx**2 + t.vy**2) ** 0.5
         self._lbl_alt.setText(f"{t.z:.2f} м")
         self._lbl_speed.setText(f"{speed:.2f} м/с")
         self._lbl_pos.setText(f"{t.x:.2f}, {t.y:.2f} м")
@@ -168,6 +178,8 @@ class StatusWidget(QWidget):
             secs = int(elapsed % 60)
             remaining = max(0, 300 - int(elapsed))
             rm, rs = divmod(remaining, 60)
-            self._lbl_clock.setText(f"{mins:02d}:{secs:02d}  (осталось {rm:02d}:{rs:02d})")
+            self._lbl_clock.setText(
+                f"{mins:02d}:{secs:02d}  (осталось {rm:02d}:{rs:02d})"
+            )
         else:
             self._lbl_clock.setText("—")

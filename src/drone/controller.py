@@ -8,6 +8,7 @@ Connection states:
 Startup: simulation starts immediately (UI stays responsive).
 Background thread retries ROS every _RETRY_INTERVAL seconds.
 """
+
 import copy
 import math
 import os
@@ -24,6 +25,7 @@ from utils.debug_log import log, success
 # ------------------------------------------------------------------ imports
 try:
     import rospy
+
     _ROSPY_OK = True
     log.info("rospy импортирован успешно")
 except ImportError as _e:
@@ -34,8 +36,9 @@ _CLOVER_OK = False
 _clover_srv = None
 if _ROSPY_OK:
     try:
-        from clover import srv as _clover_srv   # type: ignore
+        from clover import srv as _clover_srv  # type: ignore
         from std_srvs.srv import Trigger as _Trigger
+
         _CLOVER_OK = True
         log.info("clover.srv импортирован успешно")
     except ImportError as _e:
@@ -44,9 +47,9 @@ if _ROSPY_OK:
 
 
 class RosState(Enum):
-    FULL  = auto()
+    FULL = auto()
     ROSPY = auto()
-    SIM   = auto()
+    SIM = auto()
 
 
 @dataclass
@@ -83,14 +86,20 @@ def _local_ip_for(dest: str) -> str:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect((dest, 80))
             return s.getsockname()[0]
-    except Exception:
+    except OSError:
         return ""
 
 
 def _dump_env():
     """Log all ROS-related environment variables."""
-    keys = ["ROS_MASTER_URI", "ROS_IP", "ROS_HOSTNAME",
-            "ROS_NAMESPACE", "ROS_DISTRO", "PYTHONPATH"]
+    keys = [
+        "ROS_MASTER_URI",
+        "ROS_IP",
+        "ROS_HOSTNAME",
+        "ROS_NAMESPACE",
+        "ROS_DISTRO",
+        "PYTHONPATH",
+    ]
     log.debug("─── Переменные окружения ───────────────────────────")
     for k in keys:
         v = os.environ.get(k, "(не задан)")
@@ -108,8 +117,7 @@ def _dump_interfaces():
     """Log all active network interfaces with IPs."""
     try:
         out = subprocess.run(
-            ["ip", "-4", "addr", "show"],
-            capture_output=True, text=True, timeout=3
+            ["ip", "-4", "addr", "show"], capture_output=True, text=True, timeout=3
         ).stdout
         log.debug("─── Сетевые интерфейсы ─────────────────────────────")
         for line in out.splitlines():
@@ -140,6 +148,8 @@ class CloverController:
         # Simulation always starts first
         self._sim_t = 0.0
         self._sim_paused = True
+        self._field = None
+        self._sim_path: List[tuple] = []
         threading.Thread(target=self._run_sim, daemon=True).start()
         log.info("Симуляция запущена (фон)")
 
@@ -181,11 +191,12 @@ class CloverController:
 
     def _try_connect(self):
         from config import ROS_NS
+
         master_uri = os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311")
-        ros_ip     = os.environ.get("ROS_IP", "")
-        host       = master_uri.split("//")[-1].split(":")[0]
-        port_str   = master_uri.split(":")[-1] if master_uri.count(":") >= 2 else "11311"
-        port       = int(port_str)
+        ros_ip = os.environ.get("ROS_IP", "")
+        host = master_uri.split("//")[-1].split(":")[0]
+        port_str = master_uri.split(":")[-1] if master_uri.count(":") >= 2 else "11311"
+        port = int(port_str)
 
         log.info(f"ROS_MASTER_URI = {master_uri}")
         log.info(f"ROS_IP         = {ros_ip or '(не задан)'}")
@@ -206,15 +217,14 @@ class CloverController:
         log.info(f"[1/5] Ping {host}...")
         try:
             r = subprocess.run(
-                ["ping", "-c", "1", "-W", "2", host],
-                capture_output=True, timeout=5
+                ["ping", "-c", "1", "-W", "2", host], capture_output=True, timeout=5
             )
             if r.returncode == 0:
                 success(f"[1/5] Ping {host}: доступен")
             else:
                 log.error(f"[1/5] Ping {host}: НЕДОСТУПЕН")
                 log.error("Проверьте: подключены ли к WiFi дрона?")
-                log.error(f"SSID: clover-XXXX  пароль: cloverwifi")
+                log.error("SSID: clover-XXXX  пароль: cloverwifi")
                 self._set_error(f"Дрон {host} не отвечает на ping")
                 return
         except Exception as e:
@@ -236,6 +246,7 @@ class CloverController:
         log.info("[3/5] xmlrpc rosmaster ping...")
         try:
             import xmlrpc.client
+
             proxy = xmlrpc.client.ServerProxy(master_uri)
             code, msg, val = proxy.getSystemState("/diag")
             if code == 1:
@@ -263,7 +274,7 @@ class CloverController:
 
         # ── Step 5: wait_for_service (+ namespace auto-discovery) ────────────
         ns_env = os.environ.get("CLOVER_NS", "")
-        ns  = f"/{ns_env}" if ns_env else f"/{ROS_NS}"
+        ns = f"/{ns_env}" if ns_env else f"/{ROS_NS}"
         svc = _svc_path(ns, "get_telemetry")
         log.info(f"[5/5] wait_for_service {svc} (до 8 с)...")
         try:
@@ -273,13 +284,15 @@ class CloverController:
             log.warning(f"[5/5] {svc} не найден — авто-поиск неймспейса…")
             try:
                 from drone.discovery import discover_ros_info
+
                 info = discover_ros_info(master_uri)
                 found_ns = info.get("clover_ns") if info.get("ok") else None
             except Exception:
+                # Discovery is optional; fall back to the default namespace.
                 found_ns = None
 
             if found_ns and found_ns != ns:
-                ns  = found_ns
+                ns = found_ns
                 svc = _svc_path(ns, "get_telemetry")
                 log.info(f"  → Пробую авто-найденный неймспейс: {svc}")
                 try:
@@ -287,35 +300,44 @@ class CloverController:
                     success(f"[5/5] {svc}: доступен (неймспейс: {found_ns!r})")
                     ns_label = found_ns.lstrip("/") or "/"
                     log.warning(f"  Неймспейс дрона: {found_ns!r} (не /{ROS_NS})")
-                    log.warning(f"  Для постоянного решения: export CLOVER_NS={ns_label}")
+                    log.warning(
+                        f"  Для постоянного решения: export CLOVER_NS={ns_label}"
+                    )
                 except rospy.ROSException:
                     log.error(f"[5/5] {svc} тоже не найден")
                     self._set_error(
                         f"get_telemetry не найден ни в /{ROS_NS} ни в {found_ns}.\n"
-                        "Используйте «Авто-настройка» для диагностики.")
+                        "Используйте «Авто-настройка» для диагностики."
+                    )
                     return
             else:
-                n = len(info.get("services", [])) if (found_ns is None
-                        and info and info.get("ok")) else 0
+                n = (
+                    len(info.get("services", []))
+                    if (found_ns is None and info and info.get("ok"))
+                    else 0
+                )
                 log.error(f"[5/5] clover-сервисы отсутствуют ({n} других)")
                 log.error("rosmaster активен, но clover-узел на дроне НЕ ЗАПУЩЕН")
                 log.error("→ Используйте вкладку «Авто-настройка» → «Авто-настройка»")
                 log.error(f"→ Или: ssh pi@{host} 'sudo systemctl restart clover'")
                 self._set_error(
-                    f"get_telemetry не найден.\n"
-                    "Откройте вкладку «Авто-настройка» для автоматического исправления.")
+                    "get_telemetry не найден.\n"
+                    "Откройте вкладку «Авто-настройка» для автоматического исправления."
+                )
                 return
 
         # ── Connect service proxies ───────────────────────────────────────
         try:
             self._svc_telem = rospy.ServiceProxy(
-                _svc_path(ns, "get_telemetry"), _clover_srv.GetTelemetry)
-            self._svc_nav   = rospy.ServiceProxy(
-                _svc_path(ns, "navigate"), _clover_srv.Navigate)
-            self._svc_vel   = rospy.ServiceProxy(
-                _svc_path(ns, "set_velocity"), _clover_srv.SetVelocity)
-            self._svc_land  = rospy.ServiceProxy(
-                _svc_path(ns, "land"), _Trigger)
+                _svc_path(ns, "get_telemetry"), _clover_srv.GetTelemetry
+            )
+            self._svc_nav = rospy.ServiceProxy(
+                _svc_path(ns, "navigate"), _clover_srv.Navigate
+            )
+            self._svc_vel = rospy.ServiceProxy(
+                _svc_path(ns, "set_velocity"), _clover_srv.SetVelocity
+            )
+            self._svc_land = rospy.ServiceProxy(_svc_path(ns, "land"), _Trigger)
         except Exception as e:
             log.error(f"ServiceProxy: {e}")
             self._set_error(str(e))
@@ -325,32 +347,37 @@ class CloverController:
         log.info("Первый запрос телеметрии...")
         try:
             t = self._svc_telem(frame_id="map")
-            success(f"Телеметрия: x={t.x:.2f} y={t.y:.2f} z={t.z:.2f} "
-                    f"armed={t.armed} mode={t.mode}")
+            success(
+                f"Телеметрия: x={t.x:.2f} y={t.y:.2f} z={t.z:.2f} "
+                f"armed={t.armed} mode={t.mode}"
+            )
         except Exception as e:
             log.warning(f"Первая телеметрия: {e} (продолжаем)")
 
-        self._ros_state     = RosState.FULL
+        self._ros_state = RosState.FULL
         self._ros_connected = True
         with self._lock:
-            self._telemetry.ros_state  = RosState.FULL
-            self._telemetry.error_msg  = ""
+            self._telemetry.ros_state = RosState.FULL
+            self._telemetry.error_msg = ""
         success("=== ROS ПОДКЛЮЧЁН УСПЕШНО ===")
 
-        self._poll_ros()   # blocks until connection drops
+        self._poll_ros()  # blocks until connection drops
 
         self._ros_connected = False
-        log.warning("=== ROS соединение потеряно, повтор через "
-                    f"{self._RETRY_INTERVAL:.0f} с ===")
+        log.warning(
+            "=== ROS соединение потеряно, повтор через "
+            f"{self._RETRY_INTERVAL:.0f} с ==="
+        )
 
     def _set_error(self, msg: str):
         with self._lock:
-            self._telemetry.connected  = False
-            self._telemetry.error_msg  = msg
+            self._telemetry.connected = False
+            self._telemetry.error_msg = msg
 
     # --------------------------------------------------------------- poll
     def _poll_ros(self):
         from config import TELEMETRY_HZ
+
         rate = 1.0 / TELEMETRY_HZ
         fail = 0
         log.info("Polling телеметрии запущен")
@@ -358,20 +385,20 @@ class CloverController:
             try:
                 t = self._svc_telem(frame_id="map")
                 with self._lock:
-                    self._telemetry.x         = t.x
-                    self._telemetry.y         = t.y
-                    self._telemetry.z         = t.z
-                    self._telemetry.vx        = t.vx
-                    self._telemetry.vy        = t.vy
-                    self._telemetry.yaw       = t.yaw
-                    self._telemetry.armed     = t.armed
+                    self._telemetry.x = t.x
+                    self._telemetry.y = t.y
+                    self._telemetry.z = t.z
+                    self._telemetry.vx = t.vx
+                    self._telemetry.vy = t.vy
+                    self._telemetry.yaw = t.yaw
+                    self._telemetry.armed = t.armed
                     self._telemetry.connected = True
-                    self._telemetry.mode      = t.mode
+                    self._telemetry.mode = t.mode
                     self._telemetry.ros_state = RosState.FULL
                     self._telemetry.error_msg = ""
                     v = getattr(t, "voltage", 8.4)
-                    self._telemetry.voltage   = v
-                    self._telemetry.battery   = min(100.0, v / 8.4 * 100.0)
+                    self._telemetry.voltage = v
+                    self._telemetry.battery = min(100.0, v / 8.4 * 100.0)
                 if fail > 0:
                     success(f"Соединение восстановлено (после {fail} ошибок)")
                 fail = 0
@@ -388,39 +415,43 @@ class CloverController:
             time.sleep(rate)
 
     # ---------------------------------------------------------- simulation
+    def reload_field(self):
+        """Reload the editable ∞ track so the sim follows map edits."""
+        from config import FIELD_FILE
+        from models.field import FieldConfig
+
+        self._field = FieldConfig.load(FIELD_FILE)
+        self._sim_path = [
+            (x / 1000.0, y / 1000.0) for x, y in self._field.lemniscate_points(720)
+        ]
+
     def _run_sim(self):
-        from config import POLE_1, POLE_2, TRACK_RADIUS, FLIGHT_ALT
-        cx1, cy1 = POLE_1[0] / 1000.0, POLE_1[1] / 1000.0
-        cx2, cy2 = POLE_2[0] / 1000.0, POLE_2[1] / 1000.0
-        r  = TRACK_RADIUS / 1000.0
+        from config import FLIGHT_ALT
+
+        self.reload_field()
         dt = 0.05
         while self._running:
-            if not self._sim_paused and not self._ros_connected:
-                period = 2 * math.pi
-                cycle  = self._sim_t % (2 * period)
-                if cycle < period:
-                    ang  = cycle
-                    x    = cx1 + r * math.cos(ang + math.pi)
-                    y    = cy1 + r * math.sin(ang + math.pi)
-                    yaw  = ang + math.pi / 2
-                else:
-                    ang  = cycle - period
-                    x    = cx2 + r * math.cos(ang)
-                    y    = cy2 + r * math.sin(ang)
-                    yaw  = ang + math.pi / 2
+            path = self._sim_path
+            if not self._sim_paused and not self._ros_connected and len(path) >= 2:
+                n = len(path)
+                i0 = int(self._sim_t) % n
+                i1 = (i0 + 1) % n
+                x, y = path[i0]
+                nx, ny = path[i1]
+                yaw = math.atan2(nx - x, ny - y)  # heading along the track
                 with self._lock:
-                    self._telemetry.x         = x
-                    self._telemetry.y         = y
-                    self._telemetry.z         = FLIGHT_ALT
-                    self._telemetry.yaw       = yaw
-                    self._telemetry.armed     = True
+                    self._telemetry.x = x
+                    self._telemetry.y = y
+                    self._telemetry.z = FLIGHT_ALT
+                    self._telemetry.yaw = yaw
+                    self._telemetry.armed = True
                     self._telemetry.connected = True
-                    self._telemetry.mode      = "SIM"
+                    self._telemetry.mode = "SIM"
                     self._telemetry.of_active = True
-                    bat = max(0.0, 100.0 - self._sim_t * 0.2)
-                    self._telemetry.battery   = bat
-                    self._telemetry.voltage   = bat * 8.4 / 100.0
-                self._sim_t += dt * self._speed * 2.5
+                    bat = max(0.0, 100.0 - self._sim_t * 0.05)
+                    self._telemetry.battery = bat
+                    self._telemetry.voltage = bat * 8.4 / 100.0
+                self._sim_t += self._speed * 2.5
             self._notify()
             time.sleep(dt)
 
@@ -446,6 +477,7 @@ class CloverController:
 
     def takeoff(self, altitude: Optional[float] = None):
         from config import FLIGHT_ALT
+
         alt = altitude or FLIGHT_ALT
         log.info(f"takeoff: altitude={alt:.1f}m  ros={self.ros_available}")
         if self.ros_available:
@@ -457,7 +489,7 @@ class CloverController:
             self._sim_paused = False
             with self._lock:
                 self._telemetry.armed = True
-                self._telemetry.z     = alt
+                self._telemetry.z = alt
 
     def land(self):
         log.info(f"land: ros={self.ros_available}")
@@ -470,16 +502,19 @@ class CloverController:
             self._sim_paused = True
             with self._lock:
                 self._telemetry.armed = False
-                self._telemetry.z     = 0.0
+                self._telemetry.z = 0.0
 
     def set_speed(self, speed: float):
         from config import MIN_SPEED, MAX_SPEED
+
         self._speed = max(MIN_SPEED, min(MAX_SPEED, speed))
         if self.ros_available:
             try:
-                self._svc_vel(vx=self._speed, vy=0.0, vz=0.0,
-                              yaw=float("nan"), frame_id="body")
+                self._svc_vel(
+                    vx=self._speed, vy=0.0, vz=0.0, yaw=float("nan"), frame_id="body"
+                )
             except Exception:
+                # Best-effort velocity hint; a failed call must not break the UI.
                 pass
 
     def emergency_stop(self):
@@ -488,6 +523,7 @@ class CloverController:
             try:
                 self._svc_land()
             except Exception:
+                # Emergency stop is fire-and-forget: never raise from here.
                 pass
         else:
             self._sim_paused = True
@@ -508,23 +544,32 @@ class CloverController:
             try:
                 cb(t)
             except Exception:
+                # One misbehaving subscriber must not stop the others.
                 pass
 
 
 # ---------------------------------------------------------------- diagnostics
 def run_ros_diagnostics(master_uri: str = "") -> dict:
-    uri  = master_uri or os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311")
+    uri = master_uri or os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311")
     host = uri.split("//")[-1].split(":")[0]
     port_s = uri.split(":")[-1] if uri.count(":") >= 2 else "11311"
     port = int(port_s)
     items = []
 
-    items.append(("rospy установлен",
-                  "Да" if _ROSPY_OK else "НЕТ → apt install ros-noetic-desktop",
-                  _ROSPY_OK))
-    items.append(("clover.srv пакет",
-                  "Да" if _CLOVER_OK else "НЕТ → см. docs/ROS_UBUNTU.md",
-                  _CLOVER_OK))
+    items.append(
+        (
+            "rospy установлен",
+            "Да" if _ROSPY_OK else "НЕТ → apt install ros-noetic-desktop",
+            _ROSPY_OK,
+        )
+    )
+    items.append(
+        (
+            "clover.srv пакет",
+            "Да" if _CLOVER_OK else "НЕТ → см. docs/ROS_UBUNTU.md",
+            _CLOVER_OK,
+        )
+    )
 
     env_uri = os.environ.get("ROS_MASTER_URI", "")
     items.append(("ROS_MASTER_URI", env_uri or "(не задан)", bool(env_uri)))
@@ -537,36 +582,43 @@ def run_ros_diagnostics(master_uri: str = "") -> dict:
 
     # Ping
     try:
-        ping_ok = subprocess.run(
-            ["ping", "-c", "1", "-W", "2", host],
-            capture_output=True, timeout=4
-        ).returncode == 0
-    except Exception:
+        ping_ok = (
+            subprocess.run(
+                ["ping", "-c", "1", "-W", "2", host], capture_output=True, timeout=4
+            ).returncode
+            == 0
+        )
+    except (subprocess.SubprocessError, OSError):
         ping_ok = False
     items.append((f"Ping {host}", "✓ доступен" if ping_ok else "✗ недоступен", ping_ok))
 
     # TCP rosmaster port
     tcp_ok = _tcp_reachable(host, port, timeout=2.0)
-    items.append((f"TCP {host}:{port}",
-                  "✓ открыт" if tcp_ok else "✗ закрыт (firewall / rosmaster не запущен)",
-                  tcp_ok))
+    items.append(
+        (
+            f"TCP {host}:{port}",
+            "✓ открыт" if tcp_ok else "✗ закрыт (firewall / rosmaster не запущен)",
+            tcp_ok,
+        )
+    )
 
     # xmlrpc
     master_ok = False
     if _ROSPY_OK and tcp_ok:
         try:
             import xmlrpc.client
+
             code, _, val = xmlrpc.client.ServerProxy(uri).getSystemState("/d")
-            master_ok = (code == 1)
+            master_ok = code == 1
             if master_ok:
                 n_nodes = len(val[0]) if val else 0
-                items.append(("rosmaster xmlrpc",
-                               f"✓ отвечает ({n_nodes} nodes)", True))
+                items.append(
+                    ("rosmaster xmlrpc", f"✓ отвечает ({n_nodes} nodes)", True)
+                )
         except Exception as e:
             items.append(("rosmaster xmlrpc", f"✗ {e}", False))
     else:
-        items.append(("rosmaster xmlrpc",
-                      "— (пропущен, TCP недоступен)", False))
+        items.append(("rosmaster xmlrpc", "— (пропущен, TCP недоступен)", False))
 
     overall = _ROSPY_OK and _CLOVER_OK and master_ok
     return {"ok": overall, "items": items, "host": host}

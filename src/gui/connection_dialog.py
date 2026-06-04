@@ -1,4 +1,5 @@
 """ROS connection settings, diagnostics and help dialog."""
+
 from __future__ import annotations
 import os
 import re
@@ -6,21 +7,41 @@ import subprocess
 import threading
 
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import (QDialog, QDialogButtonBox, QFormLayout,
-                              QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-                              QMessageBox, QPushButton, QTabWidget, QTextEdit,
-                              QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from drone.controller import run_ros_diagnostics
-from gui.connection_guides import (GUIDE_QUICK, GUIDE_INSTALL,
-                                   GUIDE_TROUBLESHOOT, GUIDE_CMDS)
+from gui.connection_guides import (
+    GUIDE_QUICK,
+    GUIDE_INSTALL,
+    GUIDE_TROUBLESHOOT,
+    GUIDE_CMDS,
+)
 from gui.debug_widget import DebugWidget
 from gui.autosetup_widget import AutoSetupWidget
 from utils.debug_log import log
 
-_SSH_OPTS = ["-o", "StrictHostKeyChecking=no",
-             "-o", "ConnectTimeout=5",
-             "-o", "BatchMode=no"]
+_SSH_OPTS = [
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "ConnectTimeout=5",
+    "-o",
+    "BatchMode=no",
+]
 
 
 # ═══════════════════════════════ Widgets ══════════════════════════════════════
@@ -31,7 +52,8 @@ class DiagRow(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         ind = QLabel("✓" if ok else "✗")
         ind.setStyleSheet(
-            f"color:{'#6f6' if ok else '#f66'}; font-weight:bold; min-width:16px;")
+            f"color:{'#6f6' if ok else '#f66'}; font-weight:bold; min-width:16px;"
+        )
         lbl = QLabel(label)
         lbl.setMinimumWidth(230)
         val = QLabel(value)
@@ -49,13 +71,13 @@ def _make_guide(text: str) -> QTextEdit:
     w.setStyleSheet(
         "background:#0f0f0f; color:#ccc; "
         "font-family:'Menlo','Consolas','DejaVu Sans Mono',monospace; "
-        "font-size:11px; border:none;")
+        "font-size:11px; border:none;"
+    )
     return w
 
 
 # ═══════════════════════════════ Dialog ═══════════════════════════════════════
 class ConnectionDialog(QDialog):
-
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self._controller = controller
@@ -73,19 +95,20 @@ class ConnectionDialog(QDialog):
         self._err_box.setWordWrap(True)
         self._err_box.setStyleSheet(
             "background:#2a1a1a; color:#f88; border:1px solid #833; "
-            "border-radius:4px; padding:6px; font-size:11px;")
+            "border-radius:4px; padding:6px; font-size:11px;"
+        )
         self._err_box.hide()
         lay.addWidget(self._err_box)
 
         tabs = QTabWidget()
-        tabs.addTab(self._tab_connect(),               "Подключение")
+        tabs.addTab(self._tab_connect(), "Подключение")
         tabs.addTab(AutoSetupWidget(self._controller), "Авто-настройка")
-        tabs.addTab(self._tab_diag(),                  "Диагностика")
-        tabs.addTab(self._tab_log(),                   "Лог подключения")
-        tabs.addTab(_make_guide(GUIDE_QUICK),          "Быстрый старт")
-        tabs.addTab(_make_guide(GUIDE_INSTALL),        "Установка")
-        tabs.addTab(_make_guide(GUIDE_TROUBLESHOOT),   "Решение проблем")
-        tabs.addTab(_make_guide(GUIDE_CMDS),           "Команды")
+        tabs.addTab(self._tab_diag(), "Диагностика")
+        tabs.addTab(self._tab_log(), "Лог подключения")
+        tabs.addTab(_make_guide(GUIDE_QUICK), "Быстрый старт")
+        tabs.addTab(_make_guide(GUIDE_INSTALL), "Установка")
+        tabs.addTab(_make_guide(GUIDE_TROUBLESHOOT), "Решение проблем")
+        tabs.addTab(_make_guide(GUIDE_CMDS), "Команды")
         lay.addWidget(tabs, 1)
 
         btns = QDialogButtonBox(QDialogButtonBox.Close)
@@ -100,11 +123,12 @@ class ConnectionDialog(QDialog):
         gb = QGroupBox("Переменные окружения ROS")
         form = QFormLayout(gb)
         self._uri_edit = QLineEdit(
-            os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311"))
+            os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311")
+        )
         self._ip_edit = QLineEdit(
-            os.environ.get("ROS_IP", os.environ.get("ROS_HOSTNAME", "")))
-        self._ip_edit.setPlaceholderText(
-            "Ваш IP на WiFi дрона — нажмите «Автодетект»")
+            os.environ.get("ROS_IP", os.environ.get("ROS_HOSTNAME", ""))
+        )
+        self._ip_edit.setPlaceholderText("Ваш IP на WiFi дрона — нажмите «Автодетект»")
         form.addRow("ROS_MASTER_URI:", self._uri_edit)
         form.addRow("ROS_IP:", self._ip_edit)
         row = QHBoxLayout()
@@ -125,15 +149,17 @@ class ConnectionDialog(QDialog):
         row_host.addWidget(QLabel("Хост:"))
         self._ssh_host = QLineEdit(
             os.environ.get("ROS_MASTER_URI", "http://192.168.11.1:11311")
-            .split("//")[-1].split(":")[0])
+            .split("//")[-1]
+            .split(":")[0]
+        )
         row_host.addWidget(self._ssh_host, 1)
         sh.addLayout(row_host)
 
         # Row 2: action buttons
         row_btns = QHBoxLayout()
         for lbl, cmd in [
-            ("Статус clover",   "sudo systemctl status clover --no-pager -l"),
-            ("Сервисы ROS",     "rosservice list 2>&1 | grep clover"),
+            ("Статус clover", "sudo systemctl status clover --no-pager -l"),
+            ("Сервисы ROS", "rosservice list 2>&1 | grep clover"),
             ("Журнал (50 строк)", "sudo journalctl -u clover -n 50 --no-pager"),
         ]:
             btn = QPushButton(lbl)
@@ -142,7 +168,8 @@ class ConnectionDialog(QDialog):
         btn_restart = QPushButton("Починить clover ▶")
         btn_restart.setStyleSheet(
             "color:#fa0; font-weight:bold; border:1px solid #a70; "
-            "border-radius:3px; padding:2px 8px;")
+            "border-radius:3px; padding:2px 8px;"
+        )
         btn_restart.clicked.connect(self._ssh_safe_restart)
         row_btns.addWidget(btn_restart)
         sh.addLayout(row_btns)
@@ -151,8 +178,8 @@ class ConnectionDialog(QDialog):
         self._ssh_out.setReadOnly(True)
         self._ssh_out.setMaximumHeight(130)
         self._ssh_out.setStyleSheet(
-            "background:#111; color:#8fc; "
-            "font-family:monospace; font-size:11px;")
+            "background:#111; color:#8fc; font-family:monospace; font-size:11px;"
+        )
         lay.addWidget(ssh_gb)
         lay.addStretch()
         return w
@@ -162,8 +189,7 @@ class ConnectionDialog(QDialog):
         w = QWidget()
         lay = QVBoxLayout(w)
         self._diag_msg = QLabel("Нажмите «Проверить» для диагностики")
-        self._diag_msg.setStyleSheet(
-            "color:#aaa; font-size:12px; font-weight:bold;")
+        self._diag_msg.setStyleSheet("color:#aaa; font-size:12px; font-weight:bold;")
         lay.addWidget(self._diag_msg)
         self._diag_area = QWidget()
         self._diag_area_lay = QVBoxLayout(self._diag_area)
@@ -210,13 +236,16 @@ class ConnectionDialog(QDialog):
         if result["ok"]:
             self._diag_msg.setText("Всё готово — подключение должно работать.")
             self._diag_msg.setStyleSheet(
-                "color:#6f6; font-size:12px; font-weight:bold;")
+                "color:#6f6; font-size:12px; font-weight:bold;"
+            )
         else:
             fail = sum(1 for _, _, ok in result["items"] if not ok)
             self._diag_msg.setText(
-                f"Найдено проблем: {fail} — см. ✗ ниже и вкладку «Решение проблем»")
+                f"Найдено проблем: {fail} — см. ✗ ниже и вкладку «Решение проблем»"
+            )
             self._diag_msg.setStyleSheet(
-                "color:#f96; font-size:12px; font-weight:bold;")
+                "color:#f96; font-size:12px; font-weight:bold;"
+            )
         self._refresh_error()
 
     # -------------------------------------------------------- SSH helpers
@@ -224,13 +253,14 @@ class ConnectionDialog(QDialog):
         """Returns (ok: bool, error_or_warning: str)."""
         if not host:
             return False, "Хост не задан"
-        if not re.match(r'^[a-zA-Z0-9._-]+$', host):
+        if not re.match(r"^[a-zA-Z0-9._-]+$", host):
             return False, f"Недопустимые символы в хосте: {host!r}"
-        expected = (os.environ.get("ROS_MASTER_URI", "")
-                    .split("//")[-1].split(":")[0])
+        expected = os.environ.get("ROS_MASTER_URI", "").split("//")[-1].split(":")[0]
         if expected and host != expected:
-            return True, (f"Хост {host} отличается от ROS_MASTER_URI "
-                          f"({expected}). Подключаемся к правильному дрону?")
+            return True, (
+                f"Хост {host} отличается от ROS_MASTER_URI "
+                f"({expected}). Подключаемся к правильному дрону?"
+            )
         return True, ""
 
     def _ssh_run(self, remote_cmd: str):
@@ -269,7 +299,8 @@ class ConnectionDialog(QDialog):
         dlg.setText(
             f"Перезапустить сервис clover на дроне {host}?\n\n"
             "⚠  Убедитесь что дрон НА ЗЕМЛЕ и НЕ ВООРУЖЁН!\n"
-            "Перезапуск сервиса на летящем дроне отключит моторы.")
+            "Перезапуск сервиса на летящем дроне отключит моторы."
+        )
         if warn:
             dlg.setInformativeText(warn)
         dlg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
@@ -293,29 +324,43 @@ class ConnectionDialog(QDialog):
             r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=10)
             out1 = r1.stdout + r1.stderr
         except subprocess.TimeoutExpired:
-            QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(
-                "Таймаут SSH при проверке статуса (10 с)"))
+            QTimer.singleShot(
+                0,
+                lambda: self._ssh_out.setPlainText(
+                    "Таймаут SSH при проверке статуса (10 с)"
+                ),
+            )
             return
-        except Exception as e:
-            QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(
-                f"SSH ошибка: {e}"))
+        except Exception as exc:
+            # Bind the message now: ``exc`` is gone by the time the deferred
+            # lambda runs, which would raise NameError.
+            msg = f"SSH ошибка: {exc}"
+            QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(msg))
             return
 
         if "armed: True" in out1:
-            msg = ("🛑 ОТМЕНЕНО: дрон В ВОЗДУХЕ (armed=True)!\n\n"
-                   "Перезапуск запрещён — посадите дрон сначала.\n\n"
-                   f"Телеметрия:\n{out1.strip()}")
+            msg = (
+                "🛑 ОТМЕНЕНО: дрон В ВОЗДУХЕ (armed=True)!\n\n"
+                "Перезапуск запрещён — посадите дрон сначала.\n\n"
+                f"Телеметрия:\n{out1.strip()}"
+            )
             log.error("SSH restart отменён: дрон вооружён (armed=True)")
             QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(msg))
             return
 
         log.info(f"SSH restart clover на {host}: дрон не вооружён — перезапускаем")
-        QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(
-            "[2/2] Дрон не вооружён — перезапускаю clover…"))
+        QTimer.singleShot(
+            0,
+            lambda: self._ssh_out.setPlainText(
+                "[2/2] Дрон не вооружён — перезапускаю clover…"
+            ),
+        )
 
-        restart = ("sudo systemctl restart clover "
-                   "&& sleep 3 "
-                   "&& sudo systemctl status clover --no-pager -l 2>&1")
+        restart = (
+            "sudo systemctl restart clover "
+            "&& sleep 3 "
+            "&& sudo systemctl status clover --no-pager -l 2>&1"
+        )
         cmd2 = ["ssh"] + _SSH_OPTS + [f"pi@{host}", restart]
         try:
             r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=25)
@@ -326,18 +371,22 @@ class ConnectionDialog(QDialog):
             out2 = f"Ошибка: {e}"
 
         log.info(f"SSH restart результат:\n{out2}")
-        QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(
-            f"sudo systemctl restart clover\n\n{out2}"))
+        QTimer.singleShot(
+            0,
+            lambda: self._ssh_out.setPlainText(
+                f"sudo systemctl restart clover\n\n{out2}"
+            ),
+        )
 
     # -------------------------------------------------------- apply
     def _autodetect_ip(self):
-        uri  = self._uri_edit.text().strip() or "http://192.168.11.1:11311"
+        uri = self._uri_edit.text().strip() or "http://192.168.11.1:11311"
         host = uri.split("//")[-1].split(":")[0]
         try:
             r = subprocess.run(
-                ["ip", "route", "get", host],
-                capture_output=True, text=True, timeout=3)
-            m = re.search(r'src\s+([\d.]+)', r.stdout)
+                ["ip", "route", "get", host], capture_output=True, text=True, timeout=3
+            )
+            m = re.search(r"src\s+([\d.]+)", r.stdout)
             if m:
                 self._ip_edit.setText(m.group(1))
                 log.info(f"Автодетект ROS_IP: {m.group(1)}")
@@ -348,7 +397,7 @@ class ConnectionDialog(QDialog):
 
     def _on_apply(self):
         uri = self._uri_edit.text().strip()
-        ip  = self._ip_edit.text().strip()
+        ip = self._ip_edit.text().strip()
         if uri:
             os.environ["ROS_MASTER_URI"] = uri
             log.info(f"Применено: ROS_MASTER_URI={uri}")
@@ -356,7 +405,7 @@ class ConnectionDialog(QDialog):
             self._autodetect_ip()
             ip = self._ip_edit.text().strip()
         if ip:
-            os.environ["ROS_IP"]       = ip
+            os.environ["ROS_IP"] = ip
             os.environ["ROS_HOSTNAME"] = ip
             log.info(f"Применено: ROS_IP={ip}")
         self._controller.reconnect()

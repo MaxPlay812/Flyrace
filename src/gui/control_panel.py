@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (QDoubleSpinBox, QGridLayout, QGroupBox,
-                              QHBoxLayout, QLabel, QPushButton, QSlider,
-                              QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (
+    QDoubleSpinBox,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
 from config import DEFAULT_SPEED, FLIGHT_ALT, MAX_SPEED, MIN_SPEED
 
@@ -11,10 +19,10 @@ from config import DEFAULT_SPEED, FLIGHT_ALT, MAX_SPEED, MIN_SPEED
 class ControlPanel(QWidget):
     """Left-side flight control panel."""
 
-    takeoff_requested = pyqtSignal(float)   # altitude
+    takeoff_requested = pyqtSignal(float)  # altitude
     land_requested = pyqtSignal()
     stop_requested = pyqtSignal()
-    speed_changed = pyqtSignal(float)       # m/s
+    speed_changed = pyqtSignal(float)  # m/s
     start_mission = pyqtSignal()
     stop_mission = pyqtSignal()
 

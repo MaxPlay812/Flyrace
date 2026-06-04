@@ -3,28 +3,42 @@ from typing import List, Optional
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
-                              QDoubleSpinBox, QFormLayout, QHBoxLayout,
-                              QLabel, QLineEdit, QListWidget,
-                              QListWidgetItem, QPushButton, QSpinBox,
-                              QSplitter, QVBoxLayout, QWidget)
+import importlib.util
+
+from PyQt5.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from models.marker import ArucoMarker, ZoneType, save_markers
 from vision.aruco_detector import generate_marker_image
 from config import DEFAULT_MARKER_SIZE, FIELD_W, FIELD_H, MARKERS_FILE
 
-try:
-    import cv2
-    _CV2_OK = True
-except ImportError:
-    _CV2_OK = False
+_CV2_OK = importlib.util.find_spec("cv2") is not None
 
 
 class MarkerEditDialog(QDialog):
     """Create or edit a single ArUco marker configuration."""
 
-    def __init__(self, marker: Optional[ArucoMarker] = None,
-                 x: float = 0.0, y: float = 0.0, parent=None):
+    def __init__(
+        self,
+        marker: Optional[ArucoMarker] = None,
+        x: float = 0.0,
+        y: float = 0.0,
+        parent=None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Маркер ArUco")
         self.setMinimumWidth(340)
@@ -101,6 +115,7 @@ class MarkerEditDialog(QDialog):
             h, w = img.shape[:2]
             if _CV2_OK:
                 import cv2
+
                 rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             else:
                 rgb = img
@@ -127,7 +142,7 @@ class MarkerEditDialog(QDialog):
 class MarkerManagerWidget(QWidget):
     """Panel to list, add, edit, remove ArUco markers and save to JSON."""
 
-    markers_changed = pyqtSignal(list)   # list[ArucoMarker]
+    markers_changed = pyqtSignal(list)  # list[ArucoMarker]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -145,8 +160,9 @@ class MarkerManagerWidget(QWidget):
         if dlg.exec_() == QDialog.Accepted:
             m = dlg.get_marker()
             if m:
-                self._markers = [mk for mk in self._markers
-                                 if mk.marker_id != m.marker_id]
+                self._markers = [
+                    mk for mk in self._markers if mk.marker_id != m.marker_id
+                ]
                 self._markers.append(m)
                 self._refresh_list()
                 self.markers_changed.emit(self._markers)
@@ -179,9 +195,11 @@ class MarkerManagerWidget(QWidget):
     def _refresh_list(self):
         self._list.clear()
         for m in sorted(self._markers, key=lambda x: x.marker_id):
-            text = (f"#{m.marker_id:2d}  [{m.zone_type.label()}]  "
-                    f"({int(m.x)}, {int(m.y)}) мм  {m.speed_value:.1f} м/с"
-                    + (f"  «{m.label}»" if m.label else ""))
+            text = (
+                f"#{m.marker_id:2d}  [{m.zone_type.label()}]  "
+                f"({int(m.x)}, {int(m.y)}) мм  {m.speed_value:.1f} м/с"
+                + (f"  «{m.label}»" if m.label else "")
+            )
             self._list.addItem(QListWidgetItem(text))
 
     def _selected_marker(self) -> Optional[ArucoMarker]:
@@ -202,8 +220,9 @@ class MarkerManagerWidget(QWidget):
         if dlg.exec_() == QDialog.Accepted:
             nm = dlg.get_marker()
             if nm:
-                self._markers = [mk for mk in self._markers
-                                 if mk.marker_id != nm.marker_id]
+                self._markers = [
+                    mk for mk in self._markers if mk.marker_id != nm.marker_id
+                ]
                 self._markers.append(nm)
                 self._refresh_list()
                 self.markers_changed.emit(self._markers)
@@ -213,8 +232,7 @@ class MarkerManagerWidget(QWidget):
         m = self._selected_marker()
         if not m:
             return
-        self._markers = [mk for mk in self._markers
-                         if mk.marker_id != m.marker_id]
+        self._markers = [mk for mk in self._markers if mk.marker_id != m.marker_id]
         self._refresh_list()
         self.markers_changed.emit(self._markers)
         save_markers(MARKERS_FILE, self._markers)
@@ -232,6 +250,7 @@ class MarkerManagerWidget(QWidget):
         lbl = QLabel()
         if _CV2_OK:
             import cv2
+
             rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             h, w = rgb.shape[:2]
             qi = QImage(rgb.data, w, h, w * 3, QImage.Format_RGB888)

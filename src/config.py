@@ -23,8 +23,8 @@ ROS_NS = "clover"
 CAMERA_TOPIC = "/main_camera/image_raw"
 TELEMETRY_HZ = 10
 
-MARKERS_FILE = _os.path.join(
-    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "markers.json"
-)
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+MARKERS_FILE = _os.path.join(_ROOT, "markers.json")
+FIELD_FILE = _os.path.join(_ROOT, "field.json")
 APP_TITLE = "Clover 4 — Воздушные гонки"
 APP_VERSION = "1.1.0"

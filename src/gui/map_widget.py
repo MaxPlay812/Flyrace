@@ -6,7 +6,8 @@ from PyQt5.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QAction, QMenu, QWidget
 
-from config import FIELD_H, FIELD_W, POLE_1, POLE_2, POLE_DIAMETER
+from config import FIELD_FILE, FIELD_H, FIELD_W, POLE_DIAMETER
+from models.field import FieldConfig
 from models.marker import ArucoMarker, ZoneType
 from utils.compat import mono_font, sans_font
 
@@ -18,17 +19,25 @@ _ZONE_COLOR = {
     ZoneType.START: QColor(190, 50, 200, 210),
 }
 _MARGIN = 24
+_HIT_PX = 14  # click tolerance for grabbing poles / handle
 
 
 class MapWidget(QWidget):
-    """Top-down 2-D field map with drone position and ArUco markers."""
+    """Top-down 2-D field map with drone position and ArUco markers.
+
+    The ∞ track is editable: drag the poles to move the loops, drag the
+    orange handle at the loop tip (or use the wheel) to resize them. Changes
+    persist to ``field.json``.
+    """
 
     marker_add_requested = pyqtSignal(float, float)  # field x, y [mm]
     marker_selected = pyqtSignal(int)  # marker_id
+    field_changed = pyqtSignal()  # poles or loop size edited
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(420, 320)
+        self._field = FieldConfig.load(FIELD_FILE)
         self._markers: List[ArucoMarker] = []
         self._drone_x: Optional[float] = None  # mm
         self._drone_y: Optional[float] = None
@@ -38,6 +47,12 @@ class MapWidget(QWidget):
         self._lap_path: List[QPointF] = []
         self._trail: List[QPointF] = []
         self._max_trail = 300
+        # Drag state: None, ("pole", 0|1) or ("handle", None)
+        self._drag: Optional[tuple] = None
+
+    @property
+    def field(self) -> FieldConfig:
+        return self._field
 
     # --------------------------------------------------- public setters
     def set_markers(self, markers: List[ArucoMarker]):
@@ -61,6 +76,13 @@ class MapWidget(QWidget):
     def set_add_mode(self, enabled: bool):
         self._add_mode = enabled
         self.setCursor(Qt.CrossCursor if enabled else Qt.ArrowCursor)
+
+    def reset_field(self):
+        """Restore the regulation pole layout and loop size, then persist."""
+        self._field.reset()
+        self._field.save(FIELD_FILE)
+        self.field_changed.emit()
+        self.update()
 
     # ------------------------------------------- coordinate conversion
     def _transform(self):
@@ -118,37 +140,23 @@ class MapWidget(QWidget):
             p.drawText(QPointF(pt.x() - 36, pt.y() + 4), f"{gy}")
 
     def _paint_track(self, p: QPainter):
-        """Lemniscate of Bernoulli centred between the poles.
-
-        Parametric form: x = a√2·cos(t)/(sin²t+1),  y = a√2·cos(t)sin(t)/(sin²t+1)
-        Each loop's centroid lies at distance a·π/4 from the centre, so
-        a = half·4/π makes the loop centres coincide exactly with the poles
-        ("столбы в центрах окружностей").
-        """
+        """Draw the ∞ track (Bernoulli lemniscate) from the field config."""
         s, _, _ = self._transform()
-
-        cx   = (POLE_1[0] + POLE_2[0]) / 2.0
-        cy   = (POLE_1[1] + POLE_2[1]) / 2.0
-        half = (POLE_2[0] - POLE_1[0]) / 2.0       # pole offset from centre
-        a    = half * 4.0 / math.pi                # loop centroids ↔ poles
-
-        N = 600
+        pts = self._field.lemniscate_points()
+        if not pts:
+            return
         path = QPainterPath()
-        for i in range(N + 1):
-            t     = 2.0 * math.pi * i / N
-            denom = math.sin(t) ** 2 + 1.0
-            x_mm  = cx + a * math.sqrt(2) * math.cos(t) / denom
-            y_mm  = cy + a * math.sqrt(2) * math.cos(t) * math.sin(t) / denom
-            pt = self._f2w(x_mm, y_mm)
+        for i, (x_mm, y_mm) in enumerate(pts):
+            wp = self._f2w(x_mm, y_mm)
             if i == 0:
-                path.moveTo(pt)
+                path.moveTo(wp)
             else:
-                path.lineTo(pt)
+                path.lineTo(wp)
         path.closeSubpath()
 
         dash_px = max(1.0, 300 * s)
-        gap_px  = max(1.0, 100 * s)
-        line_w  = max(1.0,  50 * s)
+        gap_px = max(1.0, 100 * s)
+        line_w = max(1.0, 50 * s)
         pen = QPen(QColor(230, 220, 70, 200), line_w)
         pen.setDashPattern([dash_px / line_w, gap_px / line_w])
         pen.setCapStyle(Qt.FlatCap)
@@ -158,17 +166,31 @@ class MapWidget(QWidget):
 
     def _paint_poles(self, p: QPainter):
         s, _, _ = self._transform()
-        r = max(4.0, POLE_DIAMETER / 2 * s)
-        p.setPen(QPen(QColor(200, 200, 200), 1))
-        p.setBrush(QBrush(QColor(160, 160, 160)))
-        for px, py in (POLE_1, POLE_2):
+        r = max(5.0, POLE_DIAMETER / 2 * s)
+        poles = (self._field.pole1, self._field.pole2)
+        for i, (px, py) in enumerate(poles):
             c = self._f2w(px, py)
+            grabbed = self._drag == ("pole", i)
+            p.setPen(QPen(Qt.white if grabbed else QColor(200, 200, 200), 2))
+            p.setBrush(
+                QBrush(QColor(190, 190, 190) if grabbed else QColor(160, 160, 160))
+            )
             p.drawEllipse(c, r, r)
-        p.setPen(QColor(220, 220, 220))
+            p.setPen(QColor(225, 225, 225))
+            p.setFont(sans_font(7))
+            p.drawText(c + QPointF(-6, -r - 3), f"P{i + 1}")
+
+        # Resize handle at the loop tip
+        tx, ty = self._field.tip_point()
+        hc = self._f2w(tx, ty)
+        grabbed = self._drag == ("handle", None)
+        p.setPen(QPen(Qt.white if grabbed else QColor(240, 160, 40), 2))
+        p.setBrush(QBrush(QColor(240, 160, 40, 200)))
+        hr = 6.0
+        p.drawEllipse(hc, hr, hr)
+        p.setPen(QColor(240, 160, 40))
         p.setFont(sans_font(7))
-        for i, (px, py) in enumerate((POLE_1, POLE_2), 1):
-            c = self._f2w(px, py)
-            p.drawText(c + QPointF(-6, -r - 3), f"P{i}")
+        p.drawText(hc + QPointF(hr + 2, 3), "R")
 
     def _paint_trail(self, p: QPainter):
         if len(self._trail) < 2:
@@ -229,21 +251,75 @@ class MapWidget(QWidget):
             p.drawText(x0 + 15, y + 10, lbl)
 
     # --------------------------------------------------- mouse events
+    def _hit_track_element(self, wx: float, wy: float) -> Optional[tuple]:
+        """Return ('handle', None) or ('pole', i) if (wx, wy) grabs it."""
+        hc = self._f2w(*self._field.tip_point())
+        if math.hypot(wx - hc.x(), wy - hc.y()) <= _HIT_PX:
+            return ("handle", None)
+        for i, (px, py) in enumerate((self._field.pole1, self._field.pole2)):
+            c = self._f2w(px, py)
+            if math.hypot(wx - c.x(), wy - c.y()) <= _HIT_PX:
+                return ("pole", i)
+        return None
+
     def mousePressEvent(self, event):
-        fx, fy = self._w2f(event.x(), event.y())
-        if event.button() == Qt.LeftButton:
-            if self._add_mode and 0 <= fx <= FIELD_W and 0 <= fy <= FIELD_H:
-                self.marker_add_requested.emit(fx, fy)
-                return
-            for m in self._markers:
-                c = self._f2w(m.x, m.y)
-                if math.hypot(event.x() - c.x(), event.y() - c.y()) < 18:
-                    self._selected_id = m.marker_id
-                    self.marker_selected.emit(m.marker_id)
-                    self.update()
-                    return
-            self._selected_id = None
+        if event.button() != Qt.LeftButton:
+            return
+        wx, wy = event.x(), event.y()
+        fx, fy = self._w2f(wx, wy)
+
+        if self._add_mode and 0 <= fx <= FIELD_W and 0 <= fy <= FIELD_H:
+            self.marker_add_requested.emit(fx, fy)
+            return
+
+        # Grab a pole or the resize handle for dragging
+        hit = self._hit_track_element(wx, wy)
+        if hit is not None:
+            self._drag = hit
+            self.setCursor(Qt.ClosedHandCursor)
             self.update()
+            return
+
+        for m in self._markers:
+            c = self._f2w(m.x, m.y)
+            if math.hypot(wx - c.x(), wy - c.y()) < 18:
+                self._selected_id = m.marker_id
+                self.marker_selected.emit(m.marker_id)
+                self.update()
+                return
+        self._selected_id = None
+        self.update()
+
+    def mouseMoveEvent(self, event):
+        if self._drag is None:
+            return
+        fx, fy = self._w2f(event.x(), event.y())
+        kind, idx = self._drag
+        if kind == "pole":
+            fx = max(0.0, min(float(FIELD_W), fx))
+            fy = max(0.0, min(float(FIELD_H), fy))
+            self._field.set_pole(idx, fx, fy)
+        elif kind == "handle":
+            cx, cy = self._field.center
+            self._field.set_tip_distance(math.hypot(fx - cx, fy - cy))
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        if self._drag is None:
+            return
+        self._drag = None
+        self.setCursor(Qt.ArrowCursor)
+        self._field.save(FIELD_FILE)
+        self.field_changed.emit()
+        self.update()
+
+    def wheelEvent(self, event):
+        """Scroll over the map to resize the loops."""
+        step = 1.0 + (0.1 if event.angleDelta().y() > 0 else -0.1)
+        self._field.set_loop_scale(self._field.loop_scale * step)
+        self._field.save(FIELD_FILE)
+        self.field_changed.emit()
+        self.update()
 
     def contextMenuEvent(self, event):
         fx, fy = self._w2f(event.x(), event.y())
@@ -251,6 +327,9 @@ class MapWidget(QWidget):
         add_act = QAction(f"Добавить маркер ({int(fx)}, {int(fy)} мм)", self)
         add_act.triggered.connect(lambda: self.marker_add_requested.emit(fx, fy))
         menu.addAction(add_act)
+        reset_act = QAction("Сбросить поле к регламенту", self)
+        reset_act.triggered.connect(self.reset_field)
+        menu.addAction(reset_act)
         menu.addSeparator()
         clear_act = QAction("Очистить след", self)
         clear_act.triggered.connect(self.clear_trail)

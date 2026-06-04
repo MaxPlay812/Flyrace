@@ -58,6 +58,7 @@ class CameraThread(threading.Thread):
             try:
                 self._ros_sub.unregister()
             except Exception:
+                # Already torn down or ROS shutting down — nothing to recover.
                 pass
 
     # ------------------------------------------------------- ROS path
@@ -107,6 +108,7 @@ class CameraThread(threading.Thread):
             frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
             self._push(frame)
         except Exception:
+            # Drop a single malformed frame rather than kill the subscriber.
             pass
 
     def _ros_cb_compressed(self, msg):
@@ -118,6 +120,7 @@ class CameraThread(threading.Thread):
             if frame is not None:
                 self._push(frame)
         except Exception:
+            # Drop a single undecodable frame; the next one will arrive.
             pass
 
     # ------------------------------------------------------- OpenCV path
@@ -173,4 +176,5 @@ class CameraThread(threading.Thread):
             try:
                 cb(frame.copy())
             except Exception:
+                # A failing consumer must not stall frame capture.
                 pass

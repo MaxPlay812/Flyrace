@@ -4,6 +4,7 @@ CUDA support requires opencv-contrib-python built with CUDA.
 The standard pip package does NOT include CUDA — see docs/BUILD.md.
 All functions degrade gracefully to CPU when CUDA is unavailable.
 """
+
 from __future__ import annotations
 import functools
 from typing import Optional
@@ -11,9 +12,11 @@ import numpy as np
 
 try:
     import cv2
+
     _CV2_OK = True
 except ImportError:
     _CV2_OK = False
+
 
 # ------------------------------------------------------------------ detection
 @functools.lru_cache(maxsize=1)
@@ -38,8 +41,7 @@ def cuda_info() -> str:
     for i in range(n):
         try:
             dev = cv2.cuda.DeviceInfo(i)
-            lines.append(f"  [{i}] {dev.name()}  "
-                         f"{dev.totalMemory() // (1024**2)} МБ")
+            lines.append(f"  [{i}] {dev.name()}  {dev.totalMemory() // (1024**2)} МБ")
         except Exception:
             lines.append(f"  [{i}] <нет информации>")
     return "\n".join(lines)
@@ -55,6 +57,7 @@ def bgr2gray(frame: np.ndarray) -> np.ndarray:
             gpu_gray = cv2.cuda.cvtColor(gpu, cv2.COLOR_BGR2GRAY)
             return gpu_gray.download()
         except Exception:
+            # GPU path failed at runtime — fall through to the CPU one below.
             pass
     return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -68,6 +71,7 @@ def bgr2rgb(frame: np.ndarray) -> np.ndarray:
             gpu_rgb = cv2.cuda.cvtColor(gpu, cv2.COLOR_BGR2RGB)
             return gpu_rgb.download()
         except Exception:
+            # GPU path failed at runtime — fall through to the CPU one below.
             pass
     return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -84,7 +88,8 @@ class OpticalFlowTracker:
     _LK_MAX_LEVEL = 2
     _LK_CRITERIA = (
         cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT if _CV2_OK else 0,
-        10, 0.03
+        10,
+        0.03,
     )
     _MAX_CORNERS = 80
 
@@ -124,8 +129,7 @@ class OpticalFlowTracker:
         # Refresh keypoints
         self._prev_gray = gray
         pts = cv2.goodFeaturesToTrack(
-            gray, maxCorners=self._MAX_CORNERS,
-            qualityLevel=0.01, minDistance=8
+            gray, maxCorners=self._MAX_CORNERS, qualityLevel=0.01, minDistance=8
         )
         if pts is not None:
             self._prev_pts = pts
@@ -134,18 +138,24 @@ class OpticalFlowTracker:
 
     def _track_cpu(self, gray: np.ndarray) -> list:
         new_pts, status, _ = cv2.calcOpticalFlowPyrLK(
-            self._prev_gray, gray, self._prev_pts, None,
-            winSize=self._LK_WIN, maxLevel=self._LK_MAX_LEVEL,
+            self._prev_gray,
+            gray,
+            self._prev_pts,
+            None,
+            winSize=self._LK_WIN,
+            maxLevel=self._LK_MAX_LEVEL,
             criteria=self._LK_CRITERIA,
         )
         vectors = []
         if new_pts is not None and status is not None:
             for new, old, ok in zip(new_pts, self._prev_pts, status):
                 if ok[0]:
-                    vectors.append((
-                        tuple(old.ravel().astype(int)),
-                        tuple(new.ravel().astype(int)),
-                    ))
+                    vectors.append(
+                        (
+                            tuple(old.ravel().astype(int)),
+                            tuple(new.ravel().astype(int)),
+                        )
+                    )
         return vectors
 
     def _track_cuda(self, gray: np.ndarray) -> list:
@@ -165,10 +175,12 @@ class OpticalFlowTracker:
             vectors = []
             for new, old, ok in zip(new_pts, self._prev_pts, status):
                 if ok[0]:
-                    vectors.append((
-                        tuple(old.ravel().astype(int)),
-                        tuple(new.ravel().astype(int)),
-                    ))
+                    vectors.append(
+                        (
+                            tuple(old.ravel().astype(int)),
+                            tuple(new.ravel().astype(int)),
+                        )
+                    )
             return vectors
         except Exception:
             # Graceful fallback to CPU

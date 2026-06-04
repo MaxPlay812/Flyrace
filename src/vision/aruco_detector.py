@@ -5,6 +5,7 @@ import numpy as np
 
 try:
     import cv2
+
     _CV2_OK = True
     try:
         _DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
@@ -25,8 +26,8 @@ except ImportError:
 @dataclass
 class DetectedMarker:
     marker_id: int
-    corners: np.ndarray      # shape (4, 2) pixel coords
-    center: tuple            # (px, py)
+    corners: np.ndarray  # shape (4, 2) pixel coords
+    center: tuple  # (px, py)
     rvec: Optional[np.ndarray] = None
     tvec: Optional[np.ndarray] = None
     distance: Optional[float] = None
@@ -50,10 +51,12 @@ def generate_marker_image(marker_id: int, size_px: int = 200) -> Optional[np.nda
 class ArucoDetector:
     """Detects ArUco markers in a camera frame and optionally estimates pose."""
 
-    def __init__(self,
-                 camera_matrix: Optional[np.ndarray] = None,
-                 dist_coeffs: Optional[np.ndarray] = None,
-                 marker_size_m: float = 0.15):
+    def __init__(
+        self,
+        camera_matrix: Optional[np.ndarray] = None,
+        dist_coeffs: Optional[np.ndarray] = None,
+        marker_size_m: float = 0.15,
+    ):
         self.camera_matrix = camera_matrix
         self.dist_coeffs = dist_coeffs if dist_coeffs is not None else np.zeros(5)
         self.marker_size_m = marker_size_m
@@ -63,6 +66,7 @@ class ArucoDetector:
         if not self.available or frame is None:
             return []
         from utils.cuda import bgr2gray
+
         gray = bgr2gray(frame)
         if _NEW_API:
             corners, ids, _ = _DETECTOR.detectMarkers(gray)
@@ -80,19 +84,23 @@ class ArucoDetector:
             if self.camera_matrix is not None:
                 try:
                     rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(
-                        corners[i], self.marker_size_m,
-                        self.camera_matrix, self.dist_coeffs
+                        corners[i],
+                        self.marker_size_m,
+                        self.camera_matrix,
+                        self.dist_coeffs,
                     )
                     dm.rvec = rvec[0][0]
                     dm.tvec = tvec[0][0]
                     dm.distance = float(np.linalg.norm(tvec[0][0]))
                 except Exception:
+                    # Pose is optional — keep the 2-D detection without it.
                     pass
             results.append(dm)
         return results
 
-    def draw_markers(self, frame: np.ndarray,
-                     detected: List[DetectedMarker]) -> np.ndarray:
+    def draw_markers(
+        self, frame: np.ndarray, detected: List[DetectedMarker]
+    ) -> np.ndarray:
         if not detected:
             return frame
         out = frame.copy()
@@ -103,6 +111,13 @@ class ArucoDetector:
             label = f"ID:{dm.marker_id}"
             if dm.distance is not None:
                 label += f"  {dm.distance:.2f}m"
-            cv2.putText(out, label, (dm.center[0] + 6, dm.center[1] - 6),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
+            cv2.putText(
+                out,
+                label,
+                (dm.center[0] + 6, dm.center[1] - 6),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 255, 0),
+                2,
+            )
         return out
