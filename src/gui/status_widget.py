@@ -1,8 +1,7 @@
 from __future__ import annotations
 import time
 
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QColor, QPainter
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import (QGridLayout, QGroupBox, QLabel,
                               QProgressBar, QVBoxLayout, QWidget)
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import List, Optional
 
-import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,

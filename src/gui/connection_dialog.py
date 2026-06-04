@@ -5,13 +5,13 @@ import re
 import subprocess
 import threading
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import (QDialog, QDialogButtonBox, QFormLayout,
                               QGroupBox, QHBoxLayout, QLabel, QLineEdit,
                               QMessageBox, QPushButton, QTabWidget, QTextEdit,
                               QVBoxLayout, QWidget)
 
-from drone.controller import RosState, run_ros_diagnostics, _ROSPY_OK, _CLOVER_OK
+from drone.controller import run_ros_diagnostics
 from gui.connection_guides import (GUIDE_QUICK, GUIDE_INSTALL,
                                    GUIDE_TROUBLESHOOT, GUIDE_CMDS)
 from gui.debug_widget import DebugWidget
@@ -284,7 +284,6 @@ class ConnectionDialog(QDialog):
         ).start()
 
     def _ssh_restart_thread(self, host: str):
-        # Step 1: check armed status via telemetry service
         check = (
             "rosservice call /clover/get_telemetry \"frame_id: 'map'\" 2>&1 "
             "|| echo SERVICE_UNAVAILABLE"
@@ -310,7 +309,6 @@ class ConnectionDialog(QDialog):
             QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(msg))
             return
 
-        # Step 2: restart service
         log.info(f"SSH restart clover на {host}: дрон не вооружён — перезапускаем")
         QTimer.singleShot(0, lambda: self._ssh_out.setPlainText(
             "[2/2] Дрон не вооружён — перезапускаю clover…"))

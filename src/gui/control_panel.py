@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (QDoubleSpinBox, QFrame, QGridLayout, QGroupBox,
+from PyQt5.QtWidgets import (QDoubleSpinBox, QGridLayout, QGroupBox,
                               QHBoxLayout, QLabel, QPushButton, QSlider,
                               QVBoxLayout, QWidget)
 

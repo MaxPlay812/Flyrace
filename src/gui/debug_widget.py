@@ -1,8 +1,8 @@
 """Live debug log viewer widget."""
 from __future__ import annotations
 
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QColor, QTextCharFormat, QTextCursor
+from PyQt5.QtCore import QTimer
+from PyQt5.QtGui import QTextCursor
 from PyQt5.QtWidgets import (QCheckBox, QHBoxLayout, QPlainTextEdit,
                               QPushButton, QVBoxLayout, QWidget)
 
