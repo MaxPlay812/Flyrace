@@ -59,3 +59,20 @@ def test_field_edit_persists(qapp, tmp_path, monkeypatch):
 
     reloaded = FieldConfig.load(str(field_file))
     assert reloaded.pole1_x == 1234
+
+
+def test_marker_drag_moves_marker(qapp):
+    from gui.map_widget import MapWidget
+    from models.marker import ArucoMarker
+
+    widget = MapWidget()
+    marker = ArucoMarker(marker_id=7, x=1000, y=1000, size=150)
+    widget.set_markers([marker])
+
+    # Drag marker #7 to a new field position via the widget API.
+    widget._drag = ("marker", 7)
+    widget._drag_moved = True
+    moved = widget._marker_by_id(7)
+    moved.x, moved.y = 2600, 1900
+    assert widget._marker_by_id(7).x == 2600
+    assert widget._marker_by_id(7).y == 1900

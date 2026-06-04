@@ -33,6 +33,7 @@ class MapWidget(QWidget):
     marker_add_requested = pyqtSignal(float, float)  # field x, y [mm]
     marker_selected = pyqtSignal(int)  # marker_id
     field_changed = pyqtSignal()  # poles or loop size edited
+    markers_edited = pyqtSignal()  # a marker was dragged to a new position
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -47,8 +48,9 @@ class MapWidget(QWidget):
         self._lap_path: List[QPointF] = []
         self._trail: List[QPointF] = []
         self._max_trail = 300
-        # Drag state: None, ("pole", 0|1) or ("handle", None)
+        # Drag state: None, ("pole", 0|1), ("handle", None) or ("marker", id)
         self._drag: Optional[tuple] = None
+        self._drag_moved = False  # distinguishes a click from a drag
 
     @property
     def field(self) -> FieldConfig:
@@ -262,6 +264,17 @@ class MapWidget(QWidget):
                 return ("pole", i)
         return None
 
+    def _hit_marker(self, wx: float, wy: float) -> Optional[int]:
+        """Return the id of the marker under (wx, wy), or None."""
+        for m in self._markers:
+            c = self._f2w(m.x, m.y)
+            if math.hypot(wx - c.x(), wy - c.y()) < 18:
+                return m.marker_id
+        return None
+
+    def _marker_by_id(self, marker_id: int):
+        return next((m for m in self._markers if m.marker_id == marker_id), None)
+
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
             return
@@ -276,41 +289,58 @@ class MapWidget(QWidget):
         hit = self._hit_track_element(wx, wy)
         if hit is not None:
             self._drag = hit
+            self._drag_moved = False
             self.setCursor(Qt.ClosedHandCursor)
             self.update()
             return
 
-        for m in self._markers:
-            c = self._f2w(m.x, m.y)
-            if math.hypot(wx - c.x(), wy - c.y()) < 18:
-                self._selected_id = m.marker_id
-                self.marker_selected.emit(m.marker_id)
-                self.update()
-                return
+        # Grab a marker: selection happens on release if it was a plain click
+        marker_id = self._hit_marker(wx, wy)
+        if marker_id is not None:
+            self._drag = ("marker", marker_id)
+            self._drag_moved = False
+            self._selected_id = marker_id
+            self.setCursor(Qt.ClosedHandCursor)
+            self.update()
+            return
+
         self._selected_id = None
         self.update()
 
     def mouseMoveEvent(self, event):
         if self._drag is None:
             return
+        self._drag_moved = True
         fx, fy = self._w2f(event.x(), event.y())
+        fx = max(0.0, min(float(FIELD_W), fx))
+        fy = max(0.0, min(float(FIELD_H), fy))
         kind, idx = self._drag
         if kind == "pole":
-            fx = max(0.0, min(float(FIELD_W), fx))
-            fy = max(0.0, min(float(FIELD_H), fy))
             self._field.set_pole(idx, fx, fy)
         elif kind == "handle":
             cx, cy = self._field.center
             self._field.set_tip_distance(math.hypot(fx - cx, fy - cy))
+        elif kind == "marker":
+            marker = self._marker_by_id(idx)
+            if marker is not None:
+                marker.x, marker.y = fx, fy
         self.update()
 
     def mouseReleaseEvent(self, event):
         if self._drag is None:
             return
+        kind, idx = self._drag
         self._drag = None
         self.setCursor(Qt.ArrowCursor)
-        self._field.save(FIELD_FILE)
-        self.field_changed.emit()
+
+        if kind == "marker":
+            if self._drag_moved:
+                self.markers_edited.emit()  # persist new position
+            else:
+                self.marker_selected.emit(idx)  # plain click → open in manager
+        else:  # pole / handle
+            self._field.save(FIELD_FILE)
+            self.field_changed.emit()
         self.update()
 
     def wheelEvent(self, event):

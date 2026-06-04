@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
 
 from config import APP_TITLE, APP_VERSION, MARKERS_FILE, CAMERA_TOPIC
 from drone.controller import CloverController
-from models.marker import ArucoMarker, load_markers
+from models.marker import ArucoMarker, load_markers, save_markers
 from vision.camera_thread import CameraThread
 from vision.aruco_detector import DetectedMarker
 from utils.cuda import cuda_available
@@ -159,6 +159,7 @@ class MainWindow(QMainWindow):
         self._map_w.marker_add_requested.connect(self._on_map_add_marker)
         self._map_w.marker_selected.connect(self._on_map_marker_selected)
         self._map_w.field_changed.connect(self._controller.reload_field)
+        self._map_w.markers_edited.connect(self._on_markers_dragged)
 
         # Marker manager → refresh map
         self._marker_mgr.markers_changed.connect(self._on_markers_updated)
@@ -222,6 +223,13 @@ class MainWindow(QMainWindow):
     def _on_markers_updated(self, markers: List[ArucoMarker]):
         self._markers = markers
         self._map_w.set_markers(markers)
+
+    @pyqtSlot()
+    def _on_markers_dragged(self):
+        """A marker was moved on the map — persist and refresh the list."""
+        save_markers(MARKERS_FILE, self._markers)
+        self._marker_mgr.set_markers(self._markers)
+        self._status_bar.showMessage("Позиция маркера сохранена")
 
     @pyqtSlot(list)
     def _on_markers_detected(self, detected: List[DetectedMarker]):
