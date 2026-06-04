@@ -121,15 +121,16 @@ class MapWidget(QWidget):
         """Lemniscate of Bernoulli centred between the poles.
 
         Parametric form: x = a√2·cos(t)/(sin²t+1),  y = a√2·cos(t)sin(t)/(sin²t+1)
-        a = d/√2  places the foci exactly at the two poles, producing the
-        classic ∞ shape from the РобоФинист regulations.
+        For (x²+y²)² = 2a²(x²−y²) the foci sit at ±a, so a = d/2 places the
+        foci exactly on the two poles, producing the ∞ shape from the
+        РобоФинист regulations.
         """
         s, _, _ = self._transform()
 
         cx  = (POLE_1[0] + POLE_2[0]) / 2.0
         cy  = (POLE_1[1] + POLE_2[1]) / 2.0
         d   = float(POLE_2[0] - POLE_1[0])
-        a   = d / math.sqrt(2)          # a≈1414 mm for d=2000 mm
+        a   = d / 2.0                   # a=1000 mm → foci land on the poles
 
         N = 600
         path = QPainterPath()
