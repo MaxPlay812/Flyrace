@@ -2,17 +2,16 @@ from __future__ import annotations
 from typing import List
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSlot
-from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QAction, QMainWindow, QPushButton, QSplitter,
                               QStatusBar, QTabWidget, QToolBar, QWidget,
                               QVBoxLayout, QCheckBox, QLabel, QSizePolicy)
 
 from config import APP_TITLE, APP_VERSION, MARKERS_FILE, CAMERA_TOPIC
-from drone.controller import CloverController, Telemetry
+from drone.controller import CloverController
 from models.marker import ArucoMarker, load_markers
 from vision.camera_thread import CameraThread
 from vision.aruco_detector import DetectedMarker
-from utils.cuda import cuda_available, cuda_info
+from utils.cuda import cuda_available
 
 from drone.controller import RosState
 from gui.control_panel import ControlPanel
@@ -223,7 +222,6 @@ class MainWindow(QMainWindow):
                 self._apply_zone(known)
 
     def _apply_zone(self, marker: ArucoMarker):
-        from models.marker import ZoneType
         self._controller.set_speed(marker.speed_value)
         self._ctrl.set_speed_display(marker.speed_value)
         self._status_bar.showMessage(
