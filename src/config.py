@@ -3,8 +3,8 @@ import os as _os
 FIELD_W = 5000  # mm  — wider so figure-eight circles fit with margin
 FIELD_H = 3000  # mm
 
-POLE_1 = (1500, 1500)  # (x, y) mm from bottom-left
-POLE_2 = (3500, 1500)
+POLE_1 = (1715, 1500)  # (x, y) mm — at the centroid of the left ∞ loop
+POLE_2 = (3285, 1500)  # at the centroid of the right ∞ loop
 POLE_DIAMETER = 110  # mm
 TRACK_RADIUS = 500  # mm — drone flight circle radius around each pole
 TRACK_LINE_W = 50  # mm
