@@ -118,53 +118,31 @@ class MapWidget(QWidget):
             p.drawText(QPointF(pt.x() - 36, pt.y() + 4), f"{gy}")
 
     def _paint_track(self, p: QPainter):
-        """Draw the ∞ figure-eight as a single 4-arc closed path.
+        """Lemniscate of Bernoulli centred between the poles.
 
-        r = 52.5 % of pole spacing → circles barely cross so the X is
-        narrow and sharp, matching the РобоФинист regulation diagram.
-
-        Arc order (starting at top intersection i_top):
-          1. P1 major CCW ~325° — outer rounded part of left loop
-          2. P2 minor CW  ~35°  — left arm of X (through centre)
-          3. P2 major CW  ~325° — outer rounded part of right loop
-          4. P1 minor CCW ~35°  — right arm of X (through centre)
+        Parametric form: x = a√2·cos(t)/(sin²t+1),  y = a√2·cos(t)sin(t)/(sin²t+1)
+        a = d/√2  places the foci exactly at the two poles, producing the
+        classic ∞ shape from the РобоФинист regulations.
         """
         s, _, _ = self._transform()
 
-        cx1, cy1 = float(POLE_1[0]), float(POLE_1[1])
-        cx2, cy2 = float(POLE_2[0]), float(POLE_2[1])
-        d      = cx2 - cx1                           # pole separation mm
-        r_mm   = d * 0.525                            # 1050 mm for d=2000
-        half_d = d * 0.5
-        h      = math.sqrt(max(0.0, r_mm**2 - half_d**2))  # ≈ 320 mm
-        ix     = (cx1 + cx2) / 2.0
-        iy_top = cy1 + h
-        iy_bot = cy1 - h
+        cx  = (POLE_1[0] + POLE_2[0]) / 2.0
+        cy  = (POLE_1[1] + POLE_2[1]) / 2.0
+        d   = float(POLE_2[0] - POLE_1[0])
+        a   = d / math.sqrt(2)          # a≈1414 mm for d=2000 mm
 
-        c1    = self._f2w(cx1, cy1)
-        c2    = self._f2w(cx2, cy2)
-        i_top = self._f2w(ix, iy_top)
-        i_bot = self._f2w(ix, iy_bot)
-        r_px  = r_mm * s
-
-        rect1 = QRectF(c1.x() - r_px, c1.y() - r_px, 2 * r_px, 2 * r_px)
-        rect2 = QRectF(c2.x() - r_px, c2.y() - r_px, 2 * r_px, 2 * r_px)
-
-        def qt_ang(cen: QPointF, pt: QPointF) -> float:
-            return math.degrees(math.atan2(
-                -(pt.y() - cen.y()), pt.x() - cen.x()))
-
-        a1t = qt_ang(c1, i_top)   # ≈ +17.7°
-        a1b = qt_ang(c1, i_bot)   # ≈ -17.7°
-        a2t = qt_ang(c2, i_top)   # ≈ +162.3°
-        a2b = qt_ang(c2, i_bot)   # ≈ -162.3°
-
+        N = 600
         path = QPainterPath()
-        path.moveTo(i_top)
-        path.arcTo(rect1, a1t,  360.0 - (a1t - a1b))            # P1 major CCW
-        path.arcTo(rect2, a2b, -(((a2b - a2t) + 360.0) % 360.0))# P2 minor CW
-        path.arcTo(rect2, a2t, -(((a2t - a2b) + 360.0) % 360.0))# P2 major CW
-        path.arcTo(rect1, a1b,  (a1t - a1b))                     # P1 minor CCW
+        for i in range(N + 1):
+            t     = 2.0 * math.pi * i / N
+            denom = math.sin(t) ** 2 + 1.0
+            x_mm  = cx + a * math.sqrt(2) * math.cos(t) / denom
+            y_mm  = cy + a * math.sqrt(2) * math.cos(t) * math.sin(t) / denom
+            pt = self._f2w(x_mm, y_mm)
+            if i == 0:
+                path.moveTo(pt)
+            else:
+                path.lineTo(pt)
         path.closeSubpath()
 
         dash_px = max(1.0, 300 * s)
