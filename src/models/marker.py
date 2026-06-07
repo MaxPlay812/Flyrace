@@ -23,9 +23,9 @@ class ZoneType(str, Enum):
 @dataclass
 class ArucoMarker:
     marker_id: int
-    x: float          # mm on field (from bottom-left)
-    y: float          # mm on field
-    size: float       # mm physical size
+    x: float  # mm on field (from bottom-left)
+    y: float  # mm on field
+    size: float  # mm physical size
     zone_type: ZoneType = ZoneType.NORMAL
     speed_value: float = 0.5  # m/s target speed when zone active
     label: str = ""
