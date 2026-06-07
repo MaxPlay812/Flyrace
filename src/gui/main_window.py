@@ -89,9 +89,9 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(14, 8, 12, 8)
         lay.setSpacing(12)
 
-        title = QLabel("CLOVER&nbsp;4")
+        title = QLabel("CLOVER 4")
         title.setStyleSheet(
-            f"color:{theme.ACCENT};font-size:16px;font-weight:800;letter-spacing:1px;"
+            f"color:{theme.ACCENT};font-size:16px;font-weight:800;letter-spacing:2px;"
         )
         subtitle = QLabel("Воздушные гонки")
         subtitle.setStyleSheet(f"color:{theme.TEXT_DIM};font-size:12px;")
@@ -219,6 +219,7 @@ class MainWindow(QMainWindow):
         self._camera.add_frame_callback(self._camera_w.on_frame)
         self._camera_w.set_source_change_callback(self._switch_camera)
         self._camera_w.markers_detected.connect(self._on_markers_detected)
+        self._camera_w.line_detected.connect(self._on_line_detected)
 
         self._map_w.marker_add_requested.connect(self._on_map_add_marker)
         self._map_w.marker_selected.connect(self._on_map_marker_selected)
@@ -298,12 +299,52 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(list)
     def _on_markers_detected(self, detected: List[DetectedMarker]):
+        seen = []
         for dm in detected:
             known = next(
                 (m for m in self._markers if m.marker_id == dm.marker_id), None
             )
             if known:
                 self._apply_zone(known)
+                seen.append((known, dm))
+        if seen:
+            self._update_position_from_markers(seen)
+
+    def _update_position_from_markers(self, seen):
+        """Estimate drone position on the map from detected ArUco markers.
+
+        Each known marker has a fixed field position. The drone is placed at the
+        average of the visible markers' positions (offset by pose translation
+        when a calibrated camera provides it). This keeps the drone visible on
+        the map alongside the line, even without ROS telemetry.
+        """
+        xs, ys = [], []
+        for known, dm in seen:
+            fx, fy = known.x, known.y  # mm
+            if dm.tvec is not None:
+                # Camera sees the marker at tvec (m, camera frame). Shift the
+                # estimate by the horizontal offset so the drone, not the marker,
+                # is placed on the map.
+                fx -= float(dm.tvec[0]) * 1000.0
+                fy += float(dm.tvec[2]) * 1000.0
+            xs.append(fx)
+            ys.append(fy)
+        x_m = (sum(xs) / len(xs)) / 1000.0
+        y_m = (sum(ys) / len(ys)) / 1000.0
+        t = self._controller.get_telemetry()
+        yaw = t.yaw if t.connected else 0.0
+        self._map_w.set_drone_position(x_m, y_m, yaw)
+
+    @pyqtSlot(object)
+    def _on_line_detected(self, res):
+        """Drive the drone along the dashed line without yawing."""
+        vx, vy = self._controller.follow_line(
+            res.offset_norm, res.angle_deg, res.crossing
+        )
+        mode = "прямо (перекрёсток)" if res.crossing else "следование за линией"
+        self._status_bar.showMessage(
+            f"Линия: {mode}  vx={vx:.2f} vy={vy:+.2f} м/с"
+        )
 
     def _apply_zone(self, marker: ArucoMarker):
         self._controller.set_speed(marker.speed_value)

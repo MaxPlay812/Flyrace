@@ -517,6 +517,34 @@ class CloverController:
                 # Best-effort velocity hint; a failed call must not break the UI.
                 pass
 
+    def follow_line(
+        self, offset_norm: float, angle_deg: float, crossing: bool = False
+    ) -> tuple:
+        """Steer the drone along the dashed line using lateral velocity only.
+
+        Yaw is held fixed (``yaw=nan``) so the drone never rotates — it strafes
+        sideways to centre the line. At a crossing it flies straight (no lateral
+        correction). Returns the (vx, vy) command issued, for UI/telemetry.
+        """
+        vx = self._speed
+        if crossing:
+            vy = 0.0  # two dashes cross in the middle → keep going straight
+        else:
+            # Combine lateral offset and heading error; left is +vy in body frame.
+            k_off, k_ang = 0.8, 0.012
+            vy = -(k_off * offset_norm + k_ang * angle_deg) * self._speed
+            vy = max(-self._speed, min(self._speed, vy))
+        if self.ros_available:
+            try:
+                # yaw=nan ⇒ hold current heading (no yaw rotation)
+                self._svc_vel(
+                    vx=vx, vy=vy, vz=0.0, yaw=float("nan"), frame_id="body"
+                )
+            except Exception:
+                # Best-effort steering; a failed call must not break the loop.
+                pass
+        return vx, vy
+
     def emergency_stop(self):
         log.warning(f"АВАРИЙНАЯ ОСТАНОВКА  ros={self.ros_available}")
         if self.ros_available:

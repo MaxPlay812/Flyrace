@@ -22,8 +22,10 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from PyQt5.QtWidgets import QFileDialog, QMessageBox
+
 from models.marker import ArucoMarker, ZoneType, save_markers
-from vision.aruco_detector import generate_marker_image
+from vision.aruco_detector import generate_marker_image, generate_printable_marker
 from config import DEFAULT_MARKER_SIZE, FIELD_W, FIELD_H, MARKERS_FILE
 
 _CV2_OK = importlib.util.find_spec("cv2") is not None
@@ -192,6 +194,15 @@ class MarkerManagerWidget(QWidget):
             btns.addWidget(b)
         lay.addLayout(btns)
 
+        save_row = QHBoxLayout()
+        btn_save_one = QPushButton("Сохранить для печати…")
+        btn_save_one.clicked.connect(self._on_save_marker)
+        btn_save_all = QPushButton("Сохранить все…")
+        btn_save_all.clicked.connect(self._on_save_all)
+        for b in (btn_save_one, btn_save_all):
+            save_row.addWidget(b)
+        lay.addLayout(save_row)
+
     def _refresh_list(self):
         self._list.clear()
         for m in sorted(self._markers, key=lambda x: x.marker_id):
@@ -260,3 +271,53 @@ class MarkerManagerWidget(QWidget):
         hint.setAlignment(Qt.AlignCenter)
         v.addWidget(hint)
         dlg.exec_()
+
+    def _on_save_marker(self):
+        """Export the selected marker as a print-ready PNG (true to scale)."""
+        m = self._selected_marker()
+        if not m:
+            QMessageBox.information(self, "Печать", "Сначала выберите маркер в списке.")
+            return
+        if not _CV2_OK:
+            QMessageBox.warning(self, "Печать", "OpenCV недоступен.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Сохранить маркер", f"aruco_{m.marker_id}.png", "PNG (*.png)"
+        )
+        if not path:
+            return
+        img = generate_printable_marker(m.marker_id, m.size)
+        import cv2
+
+        if img is None or not cv2.imwrite(path, img):
+            QMessageBox.warning(self, "Печать", "Не удалось сохранить изображение.")
+            return
+        QMessageBox.information(
+            self, "Печать", f"Сохранено: {path}\nПечатайте 1:1 без масштабирования."
+        )
+
+    def _on_save_all(self):
+        """Export every configured marker into a chosen folder."""
+        if not self._markers:
+            QMessageBox.information(self, "Печать", "Нет маркеров для сохранения.")
+            return
+        if not _CV2_OK:
+            QMessageBox.warning(self, "Печать", "OpenCV недоступен.")
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Папка для маркеров")
+        if not folder:
+            return
+        import os
+        import cv2
+
+        saved = 0
+        for m in self._markers:
+            img = generate_printable_marker(m.marker_id, m.size)
+            if img is None:
+                continue
+            out = os.path.join(folder, f"aruco_{m.marker_id}_{int(m.size)}mm.png")
+            if cv2.imwrite(out, img):
+                saved += 1
+        QMessageBox.information(
+            self, "Печать", f"Сохранено маркеров: {saved} в {folder}"
+        )

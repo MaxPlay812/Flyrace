@@ -1,5 +1,4 @@
 from __future__ import annotations
-import math
 from typing import List
 
 import numpy as np
@@ -16,6 +15,7 @@ from PyQt5.QtWidgets import (
 )
 
 from vision.aruco_detector import ArucoDetector, DetectedMarker
+from vision.line_detector import LineDetector
 from utils.cuda import OpticalFlowTracker, bgr2rgb, cuda_available
 
 try:
@@ -34,15 +34,18 @@ class CameraWidget(QWidget):
     """
 
     markers_detected = pyqtSignal(list)  # list[DetectedMarker]
+    line_detected = pyqtSignal(object)  # LineResult (only while following)
     # Internal signal: delivers processed frame to main thread safely
     _frame_ready = pyqtSignal(object)  # tuple(np.ndarray, list[DetectedMarker])
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._detector = ArucoDetector()
+        self._line_detector = LineDetector()
         self._show_aruco = True
         self._show_of = False
         self._show_lines = False
+        self._follow_line = False
         self._of_tracker = OpticalFlowTracker()
         self._pending = False  # True while a frame is queued in Qt event loop
         self._frame_ready.connect(self._on_frame_main)
@@ -67,9 +70,13 @@ class CameraWidget(QWidget):
         gpu_badge = " (CUDA)" if cuda_available() else " (CPU)"
         self._chk_of.setText(f"Optical flow{gpu_badge}")
 
-        self._chk_lines = QCheckBox("Линии")
+        self._chk_lines = QCheckBox("Линия")
         self._chk_lines.setChecked(False)
-        self._chk_lines.toggled.connect(lambda v: setattr(self, "_show_lines", v))
+        self._chk_lines.toggled.connect(self._on_lines_toggled)
+
+        self._chk_follow = QCheckBox("Следовать")
+        self._chk_follow.setChecked(False)
+        self._chk_follow.toggled.connect(self._on_follow_toggled)
 
         # Camera source selector
         self._src_combo = QComboBox()
@@ -87,6 +94,7 @@ class CameraWidget(QWidget):
         tb.addWidget(self._chk_aruco)
         tb.addWidget(self._chk_of)
         tb.addWidget(self._chk_lines)
+        tb.addWidget(self._chk_follow)
         tb.addWidget(self._src_combo)
         tb.addStretch()
         self._info_label = QLabel("Нет сигнала")
@@ -143,8 +151,11 @@ class CameraWidget(QWidget):
         if self._show_aruco and self._detector.available:
             detected = self._detector.detect(frame)
             frame = self._detector.draw_markers(frame, detected)
-        if self._show_lines:
-            frame = self._draw_line_detection(frame)
+        if self._show_lines or self._follow_line:
+            res = self._line_detector.detect(frame)
+            frame = self._line_detector.draw(frame, res)
+            if self._follow_line and res.found:
+                self.line_detected.emit(res)
         if self._show_of:
             frame = self._draw_optical_flow(frame)
         if detected:
@@ -158,20 +169,14 @@ class CameraWidget(QWidget):
         frame, detected = data
         self._update_display(frame, detected)
 
-    def _draw_line_detection(self, frame: np.ndarray) -> np.ndarray:
-        """Canny + HoughLinesP overlay for track line detection."""
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        blur = cv2.GaussianBlur(gray, (5, 5), 0)
-        edges = cv2.Canny(blur, 50, 150)
-        lines = cv2.HoughLinesP(
-            edges, 1, math.pi / 180, threshold=40, minLineLength=30, maxLineGap=15
-        )
-        out = frame.copy()
-        if lines is not None:
-            for seg in lines:
-                x1, y1, x2, y2 = seg[0]
-                cv2.line(out, (x1, y1), (x2, y2), (0, 255, 128), 2)
-        return out
+    def _on_lines_toggled(self, v: bool):
+        self._show_lines = v
+
+    def _on_follow_toggled(self, v: bool):
+        self._follow_line = v
+        if v:
+            # Following implies showing the line overlay.
+            self._chk_lines.setChecked(True)
 
     def _draw_optical_flow(self, frame: np.ndarray) -> np.ndarray:
         vectors = self._of_tracker.track(frame)

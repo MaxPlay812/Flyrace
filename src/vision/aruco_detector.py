@@ -48,6 +48,45 @@ def generate_marker_image(marker_id: int, size_px: int = 200) -> Optional[np.nda
     return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
 
+def generate_printable_marker(
+    marker_id: int, size_mm: float, dpi: int = 300
+) -> Optional[np.ndarray]:
+    """Render a print-ready marker: true-to-scale glyph, white quiet zone,
+    a thin cut border and a caption with id and physical size.
+
+    The marker glyph is rendered at ``size_mm`` for the given ``dpi`` so the
+    printed square measures exactly ``size_mm`` on paper. Returns a BGR image.
+    """
+    if not _CV2_OK or not _ARUCO_OK:
+        return None
+    px_per_mm = dpi / 25.4
+    glyph_px = max(60, int(round(size_mm * px_per_mm)))
+    glyph = generate_marker_image(marker_id, glyph_px)
+    if glyph is None:
+        return None
+
+    quiet = max(12, glyph_px // 8)  # white quiet zone (>= 1 module recommended)
+    cap_h = max(36, glyph_px // 6)  # space for the caption strip
+    full = glyph_px + 2 * quiet
+    canvas = np.full((full + cap_h, full, 3), 255, dtype=np.uint8)
+    canvas[quiet : quiet + glyph_px, quiet : quiet + glyph_px] = glyph
+
+    # Thin cut border around the quiet zone
+    cv2.rectangle(canvas, (1, 1), (full - 2, full - 2), (180, 180, 180), 1)
+    label = f"ArUco 4x4  ID={marker_id}   {size_mm:.0f}x{size_mm:.0f} mm"
+    cv2.putText(
+        canvas,
+        label,
+        (quiet, full + cap_h - 12),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        max(0.4, glyph_px / 700.0),
+        (0, 0, 0),
+        max(1, glyph_px // 300),
+        cv2.LINE_AA,
+    )
+    return canvas
+
+
 class ArucoDetector:
     """Detects ArUco markers in a camera frame and optionally estimates pose."""
 
